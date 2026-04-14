@@ -734,6 +734,12 @@ text
 ║  │  Telegram│Discord│WhatsApp│Signal│iMessage│Composio(500+apps)│GitHub      │      ║
 ║  └──────────────────────────────────────────────────────────────────────────┘      ║
 ╚══════════════════════════════════════════════════════════════════════════════════════╝
+
+
+
+
+
+
 PART 2 — REPO STRUCTURE & PROJECT SCAFFOLD
 2.1 Root Monorepo Layout
 text
@@ -832,6 +838,12 @@ Build	Bun bundler + Turborepo	monorepo pattern
 gRPC	src/proto/openclaude.proto	
 20
 OpenClaude can be run as a headless gRPC service, allowing integration into other applications, CI/CD pipelines, or custom user interfaces — the server uses bidirectional streaming to send real-time text chunks, tool calls, and request permissions for sensitive commands
+
+
+
+
+
+
 PART 3 — LAYER 1: THE CORE AGENT ENGINE
 3.1 The queryLoop — Heart of Everything
 7
@@ -1048,6 +1060,12 @@ export class QueryEngine {
  The compaction prompt instructs the model to "pay special attention to specific user feedback" and preserve "all user messages that are not tool results." Post-compaction, the model is told to "continue without asking the user any further questions" — this creates a laundering path where instruction-like content in a file gets processed and when autocompact fires, the compaction model preserves it as "user feedback."
 Your implementation: Build a ContentSanitizer pre-pass before any compaction runs, inspecting all content being summarized for injected instructions. This is the security fix the original doesn't have.
 
+
+
+
+
+
+
 PART 4 — LAYER 2: THE COMPLETE TOOL REGISTRY
 4.1 Tool Architecture Pattern
 7
@@ -1158,6 +1176,11 @@ SendMessageTool	tools/messaging/	STANDARD (L2)	Send to Telegram/Discord
 GitCommitTool	tools/git/commit/	STANDARD (L2)	Commit with message
 GitPRTool	tools/git/pr/	STANDARD (L2)	Create pull requests
 AutoResearchTool	tools/research/	STANDARD (L2)	Trigger research loop
+
+
+
+
+
 PART 5 — LAYER 3: BYOK + LOCAL LLM PROVIDER ROUTER
 5.1 The OpenAI Shim Architecture
 24
@@ -1345,6 +1368,11 @@ services:
 volumes:
   ollama_data:
   neo4j_data:
+
+
+
+
+  
 PART 6 — LAYER 4: THE MEMORY ARCHITECTURE (5 Systems)
 6.1 The 4-Layer Official Memory System
 38
@@ -1596,6 +1624,12 @@ export class HybridMemorySearch {
     }
   }
 }
+
+
+
+
+
+
 PART 7 — LAYER 5: MULTI-AGENT ORCHESTRATION
 7.1 The Coordinator/Worker Pattern
 9
@@ -1713,6 +1747,11 @@ export class AgentCouncil {
     return this.buildConsensus(votes);
   }
 }
+
+
+
+
+
 PART 8 — LAYER 6: CONTEXT COMPRESSION ENGINE
 8.1 Three-Layer Compression Strategy
 2
@@ -1823,6 +1862,11 @@ export class ContextCompressor {
     return sanitized;
   }
 }
+
+
+
+
+
 PART 9 — LAYER 7: DESKTOP APPLICATION
 9.1 Tauri Application Structure
 Source pattern: src/components/ (33 subdirectories) + src/screens/ + src/ink/
@@ -1965,6 +2009,10 @@ export function BuddyWidget({ userId }: { userId: string }) {
     </div>
   );
 }
+
+
+
+
 PART 10 — LAYER 8: GRAPHIFY KNOWLEDGE GRAPH
 10.1 Integration Architecture
 Graphify plugs in as both a tool (GraphifyTool) and an MCP server. The AGENTS.md always-on hook ensures every agent session begins with graph awareness.
@@ -2118,6 +2166,11 @@ export const GraphifyMCPServer = {
 
 // Start server: python -m graphify.serve graphify-out/graph.json
 // or: bun run packages/graphify/src/mcp/server.ts --graph graphify-out/graph.json
+
+
+
+
+
 PART 11 — LAYER 9: COMPOUNDING WIKI (LLMWiki)
 11.1 The Core Pattern (Karpathy's Design)
 The compounding wiki solves the maintenance burden problem: every source you add makes the wiki richer automatically, instead of having a human keep it updated.
@@ -2262,6 +2315,10 @@ export const wikiCommands: SlashCommand[] = [
     execute: async (args, ctx) => WikiCompiler.compile(ctx.sourcesDir, ctx.wikiDir)
   }
 ];
+
+
+
+
 PART 12 — LAYER 10: KAIROS BACKGROUND DAEMON
 12.1 What KAIROS Is
 8
@@ -2385,6 +2442,10 @@ JSON
     "desktop": true
   }
 }
+
+
+
+
 PART 13 — LAYER 11: AUTORESEARCH LOOP
 13.1 The Three-Component Contract
 The AutoResearch loop (from Karpathy) requires three things: an automated experiment the agent can run without human intervention; a measurable evaluation metric; and a version control mechanism to revert failed experiments cleanly.
@@ -2508,6 +2569,10 @@ export const autoRunCommand: SlashCommand = {
     return loop.run(config);
   }
 };
+
+
+
+
 PART 14 — LAYER 12: MIROFISH SIMULATION STUDIO
 14.1 Pipeline Architecture
 The MiroFish pipeline for your CoWork build, running fully offline:
@@ -2634,6 +2699,11 @@ export function SimulationView() {
     </div>
   );
 }
+
+
+
+
+
 PART 15 — LAYER 13: MESSAGING GATEWAY (OpenClaw Pattern)
 15.1 Gateway Architecture
 TypeScript
@@ -2766,6 +2836,9 @@ export class ComposioHub {
     ];
   }
 }
+
+
+
 PART 16 — LAYER 14: SECURITY ARCHITECTURE
 16.1 The Six Permission Modes
 27
@@ -2868,6 +2941,10 @@ export class SecurityAudit {
     return new AuditReport(findings);
   }
 }
+
+
+
+
 PART 17 — LAYER 15: THE SLASH COMMAND CATALOG
 17.1 Complete Command Registry
 4
@@ -2995,6 +3072,9 @@ export const UltraPlanCommand: SlashCommand = {
     yield { type: 'plan_complete', plan };
   }
 };
+
+
+
 PART 18 — LAYER 16: PLUGIN & SKILL SYSTEM
 18.1 Skill System Architecture
 15
@@ -3067,6 +3147,9 @@ Build a knowledge graph of the current codebase or specified directory.
 - GRAPH_REPORT.md exists and is under 2000 tokens
 - Graph has been validated for consistency
 - PreToolUse hook is installed
+
+
+
 PART 19 — LAYER 17: SETTINGS & PERMISSIONS CHAIN
 19.1 Settings Resolution Order
 TypeScript
@@ -3191,6 +3274,10 @@ JSON
     "analyticsEnabled": false
   }
 }
+
+
+
+
 PART 20 — LAYER 18: PROMPT CACHE ENGINEERING
 20.1 The Economics of Caching
 9
@@ -3258,6 +3345,11 @@ export class PromptCacheManager {
     return `[Mode override: ${newMode}]`; // Goes in dynamic section only
   }
 }
+
+
+
+
+
 PART 21 — BUILD PHASES & EXECUTION TIMELINE
 Phase 1: Core Foundation (Weeks 1–2)
 Goal: Working BYOK agent CLI that runs locally
