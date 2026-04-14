@@ -625,6 +625,8 @@ PART 21 — Build Phases & Execution Timeline
 PART 22 — Full File Tree of Your Build
 PART 23 — Environment Variables Master Reference
 PART 24 — API Interface Contracts
+
+
 PART 0 — THE SOURCE FOUNDATION
 0.1 The Leaked Source Structure
 4
@@ -681,6 +683,9 @@ text
 14
  The legal angle matters: because it is a clean-room rewrite and not a copy, Anthropic's DMCA claims do not apply. As Gergely Orosz (The Pragmatic Engineer) noted, the rewrite is a new creative work that violates no copyright.
 Your build strategy: Fork OpenClaude (which is substantially modified and has its own license) as your base, reference the architectural patterns from clean-room rewrites (ruvnet/open-claude-code, instructkr/claw-code), and implement the patterns — not the code.
+
+
+
 
 PART 1 — MASTER SYSTEM ARCHITECTURE
 text
