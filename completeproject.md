@@ -3477,3 +3477,1206 @@ SecurityAudit.ts	packages/core/src/utils/security/SecurityAudit.ts	Pre-session a
 Anti-injection sanitizer	packages/core/src/utils/security/ContentSanitizer.ts	Compaction security fix
 Full test suite	packages/*/tests/	1,581 tests pattern (open-claude-code)
 Deliverable: Complete, production-ready Claude CoWork + Claude Desktop
+
+
+
+
+
+
+
+PART 22 — Full File Tree of Your Build
+This is the complete, canonical file tree for the entire locoworker monorepo. Every file listed here is implied by at least one of PART 0–21. Files are annotated with their purpose.
+
+text
+
+locoworker/
+│
+├── package.json                        # Monorepo root (pnpm workspaces)
+├── pnpm-workspace.yaml                 # Workspace definitions
+├── turbo.json                          # Turborepo pipeline config
+├── tsconfig.base.json                  # Shared TS config extended by all packages
+├── .env.example                        # Template for all env vars (see PART 23)
+├── .gitignore
+├── .eslintrc.js
+├── .prettierrc
+├── README.md
+├── completeproject.md                  # Master blueprint (this doc)
+├── CLAUDE.md                           # Root agent instruction manual
+├── AGENTS.md                           # Multi-agent team definitions
+│
+├── apps/
+│   ├── cowork-cli/                     # Terminal CLI entrypoint
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts                # CLI bootstrap, arg parsing
+│   │       ├── repl.ts                 # Interactive REPL loop
+│   │       ├── nonInteractive.ts       # Pipe/stdin mode
+│   │       └── banner.ts              # ASCII banner, version info
+│   │
+│   └── cowork-server/                  # Headless gRPC server mode
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── index.ts                # Server bootstrap
+│           ├── grpc/
+│           │   ├── server.ts           # gRPC server setup
+│           │   ├── agentService.ts     # AgentService RPC impl
+│           │   ├── sessionService.ts   # SessionService RPC impl
+│           │   └── proto/
+│           │       ├── agent.proto     # Agent RPC definitions
+│           │       └── session.proto   # Session RPC definitions
+│           └── http/
+│               ├── server.ts           # Express/Hono HTTP REST layer
+│               ├── routes/
+│               │   ├── agent.ts        # POST /run, POST /stream
+│               │   ├── session.ts      # GET/POST /sessions
+│               │   ├── memory.ts       # GET/POST/DELETE /memory
+│               │   ├── wiki.ts         # GET/POST /wiki
+│               │   ├── graph.ts        # GET /graph, POST /graph/build
+│               │   └── health.ts       # GET /health
+│               └── middleware/
+│                   ├── auth.ts         # API key validation
+│                   ├── rateLimit.ts    # Rate limiter
+│                   └── logger.ts       # Request logger
+│
+├── packages/
+│   │
+│   ├── core/                           # LAYER 1: The Core Agent Engine
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts                # Public API exports
+│   │       │
+│   │       ├── queryLoop.ts            # Master async agent loop
+│   │       ├── QueryEngine.ts          # Model call abstraction (streaming/retry)
+│   │       ├── context.ts              # Context assembly (CLAUDE.md + memory + history)
+│   │       ├── history.ts              # Session history management
+│   │       ├── session.ts              # Session lifecycle (create/resume/archive)
+│   │       ├── main.ts                 # Entrypoint wired to queryLoop
+│   │       │
+│   │       ├── tools/                  # LAYER 2: Tool Registry (40+ tools)
+│   │       │   ├── index.ts            # Tool registry and loader
+│   │       │   ├── Tool.ts             # Base tool interface + factory
+│   │       │   ├── ToolSchema.ts       # Zod schemas for all tool inputs
+│   │       │   ├── ToolResult.ts       # Normalized tool result types
+│   │       │   │
+│   │       │   ├── bash/
+│   │       │   │   ├── BashTool.ts     # Bash execution (sandboxed)
+│   │       │   │   ├── BashSecurity.ts # 23-check bash security model
+│   │       │   │   └── BashTimeout.ts  # Timeout + kill handling
+│   │       │   │
+│   │       │   ├── files/
+│   │       │   │   ├── ReadFileTool.ts
+│   │       │   │   ├── WriteFileTool.ts
+│   │       │   │   ├── EditFileTool.ts  # Surgical line-level edits
+│   │       │   │   ├── MultiEditTool.ts # Batch edits across files
+│   │       │   │   ├── GlobTool.ts      # File pattern matching
+│   │       │   │   └── GrepTool.ts      # Content search across files
+│   │       │   │
+│   │       │   ├── web/
+│   │       │   │   ├── WebFetchTool.ts  # HTTP fetch + HTML parse
+│   │       │   │   └── WebSearchTool.ts # Search engine query
+│   │       │   │
+│   │       │   ├── agent/
+│   │       │   │   ├── AgentTool.ts     # Spawn subagent session
+│   │       │   │   ├── TeamCreateTool.ts# Spawn parallel agent team
+│   │       │   │   └── AgentResultTool.ts # Collect subagent result
+│   │       │   │
+│   │       │   ├── memory/
+│   │       │   │   ├── MemorySaveTool.ts
+│   │       │   │   ├── MemorySearchTool.ts
+│   │       │   │   └── MemoryDeleteTool.ts
+│   │       │   │
+│   │       │   ├── mcp/
+│   │       │   │   ├── MCPTool.ts       # MCP protocol tool wrapper
+│   │       │   │   └── MCPClient.ts     # MCP client connection manager
+│   │       │   │
+│   │       │   ├── lsp/
+│   │       │   │   ├── LSPTool.ts       # LSP hover/definition/refs
+│   │       │   │   └── LSPClient.ts     # LSP server connection
+│   │       │   │
+│   │       │   ├── notebook/
+│   │       │   │   └── NotebookEditTool.ts # Jupyter notebook cell ops
+│   │       │   │
+│   │       │   ├── tasks/
+│   │       │   │   ├── TaskCreateTool.ts
+│   │       │   │   ├── TaskListTool.ts
+│   │       │   │   └── TaskUpdateTool.ts
+│   │       │   │
+│   │       │   ├── git/
+│   │       │   │   ├── GitDiffTool.ts
+│   │       │   │   ├── GitCommitTool.ts
+│   │       │   │   ├── GitBranchTool.ts
+│   │       │   │   └── GitWorktreeTool.ts # Worktree isolation for multi-agent
+│   │       │   │
+│   │       │   ├── desktop/
+│   │       │   │   ├── DesktopControlTool.ts # Screenshot + click
+│   │       │   │   └── ChromeTool.ts         # Browser automation
+│   │       │   │
+│   │       │   ├── voice/
+│   │       │   │   └── VoiceTool.ts     # TTS / STT integration
+│   │       │   │
+│   │       │   ├── knowledge/
+│   │       │   │   ├── GraphifyTool.ts  # Trigger graph build/query
+│   │       │   │   ├── WikiQueryTool.ts # Query LLMWiki
+│   │       │   │   └── WikiIngestTool.ts# Ingest source into LLMWiki
+│   │       │   │
+│   │       │   ├── research/
+│   │       │   │   ├── AutoResearchTool.ts # Trigger AutoResearch loop
+│   │       │   │   └── SimulateTool.ts     # Trigger MiroFish simulation
+│   │       │   │
+│   │       │   └── messaging/
+│   │       │       ├── SendMessageTool.ts  # Send via gateway channel
+│   │       │       └── NotifyTool.ts       # Push notification
+│   │       │
+│   │       ├── providers/              # LAYER 3: BYOK + Local LLM Provider Router
+│   │       │   ├── ProviderRouter.ts   # Route to correct provider
+│   │       │   ├── ProviderInterface.ts# Abstract provider interface
+│   │       │   ├── anthropic/
+│   │       │   │   └── AnthropicProvider.ts
+│   │       │   ├── openai/
+│   │       │   │   └── OpenAIProvider.ts
+│   │       │   ├── gemini/
+│   │       │   │   └── GeminiProvider.ts
+│   │       │   ├── deepseek/
+│   │       │   │   └── DeepSeekProvider.ts
+│   │       │   ├── bedrock/
+│   │       │   │   └── BedrockProvider.ts
+│   │       │   ├── vertex/
+│   │       │   │   └── VertexProvider.ts
+│   │       │   └── local/
+│   │       │       ├── OllamaProvider.ts   # Ollama OpenAI-compat shim
+│   │       │       └── LMStudioProvider.ts # LM Studio shim
+│   │       │
+│   │       ├── memdir/                 # LAYER 4: Memory Architecture (5 systems)
+│   │       │   ├── MemorySystem.ts     # Unified memory interface
+│   │       │   ├── MemoryIndex.ts      # MEMORY.md index (capped 200 lines)
+│   │       │   ├── MemorySearch.ts     # Hybrid search: BM25 + embeddings + RRF
+│   │       │   ├── MemoryEmbedder.ts   # Embedding generation
+│   │       │   ├── SessionMemory.ts    # In-session working memory
+│   │       │   └── AutoDream.ts        # Overnight consolidation loop
+│   │       │
+│   │       ├── coordinator/            # LAYER 5: Multi-Agent Orchestration
+│   │       │   ├── AgentCoordinator.ts # Master coordinator logic
+│   │       │   ├── WorkerPool.ts       # Worker agent lifecycle management
+│   │       │   ├── WorktreeManager.ts  # Git worktree isolation per worker
+│   │       │   ├── TaskQueue.ts        # Distributed task queue
+│   │       │   └── ResultCollector.ts  # Merge worker results
+│   │       │
+│   │       ├── services/
+│   │       │   └── compact/
+│   │       │       ├── ContextCompressor.ts # LAYER 6: Compression engine
+│   │       │       ├── MicroCompact.ts      # Local trim (no model call)
+│   │       │       ├── AutoCompact.ts       # Near-limit summarization
+│   │       │       ├── FullCompact.ts       # Full conversation compression
+│   │       │       └── CompactionCircuit.ts # Circuit breaker (max failures)
+│   │       │
+│   │       ├── commands/               # LAYER 15: Slash Command Catalog
+│   │       │   ├── index.ts            # Command registry + dispatcher
+│   │       │   ├── CommandBase.ts      # Base command class
+│   │       │   ├── memory/
+│   │       │   │   ├── MemoryListCommand.ts     # /memory-list
+│   │       │   │   ├── MemorySearchCommand.ts   # /memory-search
+│   │       │   │   └── MemoryClearCommand.ts    # /memory-clear
+│   │       │   ├── context/
+│   │       │   │   ├── CompactCommand.ts        # /compact
+│   │       │   │   ├── ClearCommand.ts          # /clear
+│   │       │   │   └── ContextStatsCommand.ts   # /context
+│   │       │   ├── git/
+│   │       │   │   ├── CommitCommand.ts         # /commit
+│   │       │   │   ├── PRCommand.ts             # /pr
+│   │       │   │   └── DiffCommand.ts           # /diff
+│   │       │   ├── knowledge/
+│   │       │   │   ├── WikiIngestCommand.ts     # /wiki-ingest
+│   │       │   │   ├── WikiQueryCommand.ts      # /wiki-query --save
+│   │       │   │   ├── WikiLintCommand.ts       # /wiki-lint
+│   │       │   │   ├── WikiGraphCommand.ts      # /wiki-graph
+│   │       │   │   └── WikiCompileCommand.ts    # /wiki-compile
+│   │       │   ├── research/
+│   │       │   │   ├── AutoRunCommand.ts        # /autorun
+│   │       │   │   ├── SimulateCommand.ts       # /simulate
+│   │       │   │   └── ResearchCommand.ts       # /research
+│   │       │   ├── system/
+│   │       │   │   ├── DoctorCommand.ts         # /doctor (audit)
+│   │       │   │   ├── StatusCommand.ts         # /status
+│   │       │   │   ├── HelpCommand.ts           # /help
+│   │       │   │   ├── ModelCommand.ts          # /model <name>
+│   │       │   │   └── VersionCommand.ts        # /version
+│   │       │   └── experimental/
+│   │       │       ├── UltraPlanCommand.ts      # /ultraplan
+│   │       │       ├── DeepResearchCommand.ts   # /deepresearch
+│   │       │       └── BuddyCommand.ts          # /buddy
+│   │       │
+│   │       ├── skills/                 # LAYER 16: Plugin & Skill System
+│   │       │   ├── SkillEngine.ts      # Load + dispatch skills
+│   │       │   ├── SkillLoader.ts      # Builtin + user + plugin skill discovery
+│   │       │   ├── SkillRunner.ts      # Inline vs forked execution
+│   │       │   ├── SkillValidator.ts   # Schema + permission validation
+│   │       │   └── builtin/
+│   │       │       ├── summarize.skill.md
+│   │       │       ├── refactor.skill.md
+│   │       │       ├── test-gen.skill.md
+│   │       │       ├── doc-gen.skill.md
+│   │       │       └── review.skill.md
+│   │       │
+│   │       ├── state/                  # LAYER 17: Settings & Permissions Chain
+│   │       │   ├── SettingsChain.ts    # Cascade resolver (5-level)
+│   │       │   ├── SettingsSchema.ts   # Zod schema for settings.json
+│   │       │   ├── SettingsMigrator.ts # Version migration utility
+│   │       │   └── defaults.ts         # Factory defaults for all settings
+│   │       │
+│   │       ├── utils/
+│   │       │   ├── permissions/
+│   │       │   │   ├── PermissionGate.ts   # LAYER 14: Approve/block tool calls
+│   │       │   │   ├── PermissionLevel.ts  # Enum: READ_ONLY → DANGEROUS
+│   │       │   │   └── PermissionDialog.ts # Prompt user for approval
+│   │       │   ├── security/
+│   │       │   │   ├── SecurityAudit.ts    # Pre-session audit (CLAUDE.md + MCP)
+│   │       │   │   └── SandboxCheck.ts     # Verify sandbox is not disabled
+│   │       │   ├── cache/              # LAYER 18: Prompt Cache Engineering
+│   │       │   │   ├── CacheBuilder.ts     # Assemble static/project/dynamic blocks
+│   │       │   │   ├── CacheBreakDetector.ts # Detect cache-busting vectors
+│   │       │   │   └── StickyLatch.ts      # Prevent mode toggle cache busts
+│   │       │   ├── hooks/
+│   │       │   │   ├── HookRunner.ts       # PreToolUse / PostToolUse / Stop
+│   │       │   │   └── HookRegistry.ts     # Register + deregister hooks
+│   │       │   ├── telemetry/
+│   │       │   │   └── Telemetry.ts        # Optional usage telemetry (opt-in)
+│   │       │   ├── logger.ts
+│   │       │   ├── retry.ts
+│   │       │   └── tokenCounter.ts
+│   │       │
+│   │       └── types/
+│   │           ├── Agent.ts
+│   │           ├── Message.ts
+│   │           ├── Tool.ts
+│   │           ├── Memory.ts
+│   │           ├── Provider.ts
+│   │           └── Session.ts
+│   │
+│   ├── desktop/                        # LAYER 7: Desktop Application (Tauri)
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── vite.config.ts
+│   │   ├── src-tauri/
+│   │   │   ├── Cargo.toml
+│   │   │   ├── tauri.conf.json
+│   │   │   └── src/
+│   │   │       ├── main.rs             # Tauri app entry
+│   │   │       ├── commands/
+│   │   │       │   ├── agent.rs        # IPC: run/stream agent
+│   │   │       │   ├── session.rs      # IPC: session mgmt
+│   │   │       │   ├── memory.rs       # IPC: memory ops
+│   │   │       │   ├── settings.rs     # IPC: read/write settings
+│   │   │       │   └── kairos.rs       # IPC: daemon control
+│   │   │       └── tray.rs             # System tray + notifications
+│   │   └── src/
+│   │       ├── main.tsx
+│   │       ├── App.tsx
+│   │       ├── layouts/
+│   │       │   └── ThreePanelLayout.tsx # Left / Center / Right panels
+│   │       ├── panels/
+│   │       │   ├── LeftPanel/
+│   │       │   │   ├── FileTree.tsx
+│   │       │   │   ├── KnowledgeTree.tsx
+│   │       │   │   └── ActivityLog.tsx
+│   │       │   ├── CenterPanel/
+│   │       │   │   ├── ChatView.tsx
+│   │       │   │   ├── EmbeddedTerminal.tsx
+│   │       │   │   ├── GraphView.tsx
+│   │       │   │   └── SimulationView.tsx
+│   │       │   └── RightPanel/
+│   │       │       ├── FilePreview.tsx
+│   │       │       ├── MemoryPreview.tsx
+│   │       │       └── WikiPreview.tsx
+│   │       ├── sidebar/
+│   │       │   ├── Sidebar.tsx
+│   │       │   └── modes/
+│   │       │       ├── ChatMode.tsx
+│   │       │       ├── WikiMode.tsx
+│   │       │       ├── GraphMode.tsx
+│   │       │       ├── SearchMode.tsx
+│   │       │       ├── ResearchMode.tsx
+│   │       │       ├── SimulateMode.tsx
+│   │       │       ├── SettingsMode.tsx
+│   │       │       └── DeepResearchMode.tsx
+│   │       ├── modals/
+│   │       │   ├── BYOKModal.tsx       # API key entry + provider select
+│   │       │   ├── PermissionModal.tsx # Approval dialog for dangerous ops
+│   │       │   ├── UltraPlanModal.tsx  # Long-horizon planning UI
+│   │       │   └── ProviderModal.tsx   # Switch active provider/model
+│   │       ├── hooks/
+│   │       │   ├── useAgent.ts
+│   │       │   ├── useMemory.ts
+│   │       │   ├── useProvider.ts
+│   │       │   ├── useKairos.ts
+│   │       │   ├── useSession.ts
+│   │       │   └── useSettings.ts
+│   │       ├── components/
+│   │       │   ├── MessageBubble.tsx
+│   │       │   ├── ToolCallCard.tsx
+│   │       │   ├── MemoryCard.tsx
+│   │       │   ├── BuddyWidget.tsx     # Companion mini-agent widget
+│   │       │   ├── ProviderBadge.tsx
+│   │       │   └── TokenMeter.tsx
+│   │       └── store/
+│   │           ├── sessionStore.ts
+│   │           ├── settingsStore.ts
+│   │           └── memoryStore.ts
+│   │
+│   ├── graphify/                       # LAYER 8: Knowledge Graph
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── SKILL.md                    # Graphify skill definition for agent
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── extractor/
+│   │       │   ├── ASTExtractor.ts     # Tree-sitter multi-language extraction
+│   │       │   ├── DocExtractor.ts     # Concept extraction from docs
+│   │       │   └── LanguageRegistry.ts # Supported language grammars
+│   │       ├── graph/
+│   │       │   ├── GraphManager.ts     # Build + update graph
+│   │       │   ├── GraphQuery.ts       # Query interface (neighbors/paths/clusters)
+│   │       │   ├── Clustering.ts       # Leiden community detection
+│   │       │   └── GraphReport.ts      # Write graphify-out/GRAPH_REPORT.md
+│   │       ├── hooks/
+│   │       │   └── preSearch.ts        # PreToolUse hook: consult graph first
+│   │       └── mcp/
+│   │           ├── GraphifyMCPServer.ts# Expose graph as MCP server
+│   │           └── GraphifyTools.ts    # MCP tool definitions (query/build/report)
+│   │
+│   ├── wiki/                           # LAYER 9: Compounding Wiki (LLMWiki)
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── compiler/
+│   │       │   ├── WikiCompiler.ts     # Incremental compilation pipeline
+│   │       │   ├── ChangeDetector.ts   # SHA256-based source change detection
+│   │       │   ├── PageWriter.ts       # LLM-written wiki page generator
+│   │       │   └── PageLinter.ts       # Validate pages against schema.md
+│   │       ├── schema/
+│   │       │   ├── purpose.md          # Why this wiki exists
+│   │       │   └── schema.md           # How pages should be structured
+│   │       ├── query/
+│   │       │   └── WikiQuery.ts        # Query interface + --save flag support
+│   │       └── mcp/
+│   │           ├── WikiMCPServer.ts    # Expose wiki as MCP server
+│   │           └── WikiTools.ts        # query / ingest / lint / graph / compile
+│   │
+│   ├── kairos/                         # LAYER 10: KAIROS Background Daemon
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── daemon/
+│   │       │   ├── KAIROSDaemon.ts     # Main heartbeat loop
+│   │       │   ├── TickDecider.ts      # Model decides: act or sleep?
+│   │       │   ├── QuietHours.ts       # Quiet hours enforcement
+│   │       │   └── DailyLog.ts         # Append-only daily log writer
+│   │       ├── dream/
+│   │       │   └── DreamRunner.ts      # AutoDream consolidation (idle time)
+│   │       └── webhooks/
+│   │           ├── WebhookServer.ts    # Inbound webhook listener
+│   │           ├── GitHubWebhook.ts    # GitHub event handler
+│   │           └── WebhookRouter.ts    # Route events to agent sessions
+│   │
+│   ├── research/                       # LAYER 11: AutoResearch Loop
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── AutoResearchLoop.ts     # Main experiment runner
+│   │       ├── Evaluator.ts            # Scoring + metric collection
+│   │       ├── Journal.ts              # Commit-per-experiment research journal
+│   │       ├── Hypothesis.ts           # Hypothesis generator
+│   │       └── Rollback.ts             # Git-backed revert on failure
+│   │
+│   ├── simulation/                     # LAYER 12: MiroFish Simulation Studio
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   ├── docker-compose.yml          # Ollama + Neo4j offline stack
+│   │   └── src/
+│   │       ├── index.ts
+│   │       ├── pipeline/
+│   │       │   ├── GraphBuilder.ts     # Build sim graph from sources
+│   │       │   ├── MemoryInjector.ts   # Pre-load agent memories
+│   │       │   ├── GraphRAG.ts         # GraphRAG construction (Neo4j)
+│   │       │   ├── PersonaGenerator.ts # Generate N unique agent personas
+│   │       │   └── ReportGenerator.ts  # Export findings to LLMWiki
+│   │       ├── platforms/
+│   │       │   ├── TwitterSim.ts       # Twitter-like dynamics
+│   │       │   └── RedditSim.ts        # Reddit-like dynamics
+│   │       └── interaction/
+│   │           ├── AgentChat.ts        # Chat with simulated agents
+│   │           └── Counterfactual.ts   # Run counterfactual scenarios
+│   │
+│   └── gateway/                        # LAYER 13: Messaging Gateway (OpenClaw)
+│       ├── package.json
+│       ├── tsconfig.json
+│       └── src/
+│           ├── index.ts
+│           ├── GatewayManager.ts       # Init all channels from config
+│           ├── MessageRouter.ts        # Inbound → session → reply
+│           ├── SessionIsolator.ts      # Per-thread/channel session map
+│           ├── TranscriptSaver.ts      # Save transcript on thread archive
+│           ├── channels/
+│           │   ├── ChannelInterface.ts # Abstract channel interface
+│           │   ├── TelegramChannel.ts  # Telegram bot connector
+│           │   ├── DiscordChannel.ts   # Discord thread-isolated connector
+│           │   └── WhatsAppChannel.ts  # WhatsApp connector
+│           └── integrations/
+│               └── ComposioHub.ts      # 500+ app integrations via Composio
+│
+├── config/
+│   ├── settings.json                   # Master settings (see schema in PART 19)
+│   ├── settings.schema.json            # JSON Schema for validation
+│   ├── kairos.json                     # Daemon config (tick, quiet hours, webhooks)
+│   └── mcp-servers.json                # MCP server definitions
+│
+├── skills/                             # User-level skills directory
+│   └── .gitkeep
+│
+├── graphify-out/                       # Generated graph artifacts
+│   └── GRAPH_REPORT.md                 # Auto-written by Graphify skill
+│
+└── ~/.cowork/                          # Runtime state (outside repo, on disk)
+    ├── settings.json                   # User-level settings override
+    ├── projects/
+    │   └── {project-name}/
+    │       ├── CLAUDE.md               # Project instruction manual
+    │       ├── MEMORY.md               # Memory index (capped 200 lines)
+    │       ├── memory/
+    │       │   ├── {id}.mem.json       # Individual memory entries
+    │       │   └── embeddings.bin      # Local embedding cache
+    │       └── sessions/
+    │           └── {session-id}.json   # Session history snapshots
+    ├── transcripts/
+    │   └── {YYYY-MM-DD}.md             # Daily transcript log
+    ├── logs/
+    │   └── kairos-{YYYY-MM-DD}.log     # KAIROS daily append-only log
+    └── research/
+        └── journal/
+            └── {experiment-id}.md      # AutoResearch commit-per-experiment
+
+
+
+
+
+            
+PART 23 — Environment Variables Master Reference
+All environment variables used across the full monorepo. Variables are grouped by subsystem. All should be copied from .env.example and placed in .env at the repo root (never committed).
+
+23.1 — Provider API Keys (BYOK)
+Variable	Required	Description
+ANTHROPIC_API_KEY	If using Anthropic	Anthropic Claude API key
+OPENAI_API_KEY	If using OpenAI	OpenAI API key
+GEMINI_API_KEY	If using Gemini	Google Gemini API key
+DEEPSEEK_API_KEY	If using DeepSeek	DeepSeek API key
+AWS_ACCESS_KEY_ID	If using Bedrock	AWS IAM key for Bedrock
+AWS_SECRET_ACCESS_KEY	If using Bedrock	AWS IAM secret for Bedrock
+AWS_REGION	If using Bedrock	AWS region (e.g. us-east-1)
+GOOGLE_CLOUD_PROJECT	If using Vertex	GCP project for Vertex AI
+GOOGLE_APPLICATION_CREDENTIALS	If using Vertex	Path to GCP service account JSON
+23.2 — Provider Router Config
+Variable	Required	Default	Description
+DEFAULT_PROVIDER	No	anthropic	Active provider at startup
+DEFAULT_MODEL	No	claude-opus-4-5	Default model name
+FALLBACK_PROVIDER	No	openai	Fallback if primary fails
+OLLAMA_BASE_URL	If using Ollama	http://localhost:11434	Ollama OpenAI-compat endpoint
+LMSTUDIO_BASE_URL	If using LM Studio	http://localhost:1234	LM Studio endpoint
+LOCAL_MODEL_NAME	If using local	llama3	Local model identifier
+PROVIDER_TIMEOUT_MS	No	30000	Per-request timeout (ms)
+PROVIDER_MAX_RETRIES	No	3	Max retry attempts on failure
+23.3 — Core Agent Engine
+Variable	Required	Default	Description
+COWORK_STATE_DIR	No	~/.cowork	Root directory for all runtime state
+COWORK_PROJECT	No	(cwd basename)	Active project name
+COWORK_SESSION_ID	No	(auto-generated)	Resume a specific session
+COWORK_MAX_TURNS	No	50	Max agent loop iterations
+COWORK_MAX_TOKENS	No	200000	Context window ceiling
+COWORK_VERBOSE	No	false	Enable verbose logging
+COWORK_LOG_LEVEL	No	info	Log level: debug/info/warn/error
+COWORK_TELEMETRY	No	false	Opt-in to usage telemetry
+COWORK_NON_INTERACTIVE	No	false	Run in pipe/stdin mode
+23.4 — Context Compression Engine
+Variable	Required	Default	Description
+COMPACT_THRESHOLD	No	0.85	Fraction of context window that triggers auto-compact
+COMPACT_RESERVE_BUFFER	No	4096	Tokens to reserve for compaction summary
+COMPACT_MAX_FAILURES	No	3	Max consecutive compaction failures before circuit break
+MICROCOMPACT_MAX_TOOL_OUTPUT	No	2000	Max chars per tool output before local trim
+23.5 — Memory Architecture
+Variable	Required	Default	Description
+MEMORY_MAX_INDEX_LINES	No	200	Max lines in MEMORY.md index
+MEMORY_EMBEDDING_MODEL	No	nomic-embed-text	Embedding model for semantic search
+MEMORY_EMBEDDING_URL	No	http://localhost:11434	Embedding endpoint (Ollama-compatible)
+MEMORY_RRF_K	No	60	Reciprocal Rank Fusion K constant
+AUTODREAM_ENABLED	No	true	Enable AutoDream consolidation
+AUTODREAM_IDLE_MINUTES	No	30	Idle time before AutoDream triggers
+AUTODREAM_MAX_TRANSCRIPTS	No	7	Days of transcripts to consolidate
+23.6 — Prompt Cache Engineering
+Variable	Required	Default	Description
+CACHE_ENABLED	No	true	Enable prompt caching
+CACHE_STATIC_TTL_SECONDS	No	3600	Static prompt block cache TTL
+CACHE_BREAK_STRICT	No	true	Fail loudly if cache-break vector detected in static block
+CACHE_STICKY_LATCH	No	true	Prevent mode toggles from busting static cache
+23.7 — Security & Permissions
+Variable	Required	Default	Description
+PERMISSION_MODE	No	default	default, strict, or audit-only
+ALLOW_DANGEROUS_TOOLS	No	false	Allow DANGEROUS-level tools without per-call approval
+SANDBOX_ENABLED	No	true	Enforce bash sandboxing
+AUDIT_ON_START	No	true	Run SecurityAudit before first agent turn
+BASH_ALLOWED_COMMANDS	No	""	Comma-separated bash command allowlist
+BASH_BLOCKED_COMMANDS	No	rm -rf,sudo	Comma-separated hardcoded blocklist
+BASH_TIMEOUT_SECONDS	No	60	Max bash execution time
+ALLOWED_DOMAINS	No	""	Allowed domains for WebFetchTool
+23.8 — MCP Servers
+Variable	Required	Default	Description
+MCP_CONFIG_PATH	No	config/mcp-servers.json	Path to MCP server definitions
+MCP_TIMEOUT_MS	No	10000	MCP tool call timeout
+GRAPHIFY_MCP_PORT	No	3101	Port for Graphify MCP server
+WIKI_MCP_PORT	No	3102	Port for LLMWiki MCP server
+23.9 — Graphify (Knowledge Graph)
+Variable	Required	Default	Description
+GRAPHIFY_OUTPUT_DIR	No	graphify-out/	Where to write GRAPH_REPORT.md
+GRAPHIFY_LANGUAGES	No	ts,py,js,rs,go	Languages to extract via Tree-sitter
+GRAPHIFY_CLUSTER_ALGO	No	leiden	Graph clustering algorithm
+GRAPHIFY_CLUSTER_RESOLUTION	No	1.0	Leiden resolution parameter
+GRAPHIFY_MAX_NODES	No	10000	Max nodes before graph is sampled
+23.10 — LLMWiki (Compounding Wiki)
+Variable	Required	Default	Description
+WIKI_DIR	No	~/.cowork/projects/{project}/wiki	Wiki pages storage
+WIKI_SOURCES_DIR	No	docs/	Default source directory to ingest
+WIKI_SCHEMA_PATH	No	packages/wiki/src/schema/schema.md	Wiki page schema
+WIKI_COMPILER_MODEL	No	(inherits DEFAULT_MODEL)	Model used for page writing
+WIKI_CHANGE_DETECTION	No	sha256	Hash algorithm for source change detection
+23.11 — KAIROS Daemon
+Variable	Required	Default	Description
+KAIROS_ENABLED	No	false	Enable background daemon
+KAIROS_TICK_INTERVAL_SECONDS	No	300	Heartbeat interval (5 min default)
+KAIROS_QUIET_HOURS_START	No	23	Quiet hours start (24h, local time)
+KAIROS_QUIET_HOURS_END	No	7	Quiet hours end (24h, local time)
+KAIROS_LOG_DIR	No	~/.cowork/logs	Daemon log directory
+KAIROS_WEBHOOK_PORT	No	4242	Inbound webhook listener port
+GITHUB_WEBHOOK_SECRET	If using GH webhooks	""	GitHub webhook HMAC secret
+23.12 — AutoResearch Loop
+Variable	Required	Default	Description
+RESEARCH_JOURNAL_DIR	No	~/.cowork/research/journal	Experiment journal storage
+RESEARCH_MAX_ITERATIONS	No	10	Max auto-iterations per run
+RESEARCH_EVAL_THRESHOLD	No	0.8	Minimum evaluator score to accept result
+RESEARCH_AUTO_COMMIT	No	true	Auto-commit per experiment to journal
+RESEARCH_ROLLBACK_ON_FAIL	No	true	Git-revert on below-threshold result
+23.13 — MiroFish Simulation Studio
+Variable	Required	Default	Description
+SIM_NEO4J_URI	If using simulation	bolt://localhost:7687	Neo4j connection URI
+SIM_NEO4J_USER	If using simulation	neo4j	Neo4j username
+SIM_NEO4J_PASSWORD	If using simulation	""	Neo4j password
+SIM_PERSONA_COUNT	No	50	Default number of simulated agents
+SIM_OLLAMA_URL	No	http://localhost:11434	Ollama URL for local sim models
+SIM_OUTPUT_DIR	No	~/.cowork/simulations	Simulation report output
+23.14 — Messaging Gateway (OpenClaw)
+Variable	Required	Default	Description
+GATEWAY_ENABLED	No	false	Enable messaging gateway
+TELEGRAM_BOT_TOKEN	If using Telegram	""	Telegram BotFather token
+DISCORD_BOT_TOKEN	If using Discord	""	Discord application bot token
+DISCORD_GUILD_ID	If using Discord	""	Discord server (guild) ID
+WHATSAPP_API_URL	If using WhatsApp	""	WhatsApp Business API endpoint
+WHATSAPP_API_TOKEN	If using WhatsApp	""	WhatsApp API token
+COMPOSIO_API_KEY	If using Composio	""	Composio integration hub key
+GATEWAY_SESSION_TTL_HOURS	No	24	Inactivity before gateway session expires
+23.15 — Desktop App (Tauri)
+Variable	Required	Default	Description
+TAURI_PRIVATE_KEY	For signed releases	""	Tauri app signing private key
+VITE_API_BASE_URL	No	http://localhost:3000	Backend API URL (dev mode)
+VITE_GRPC_URL	No	http://localhost:50051	gRPC server URL (dev mode)
+VITE_ENABLE_DEVTOOLS	No	false	Enable React DevTools in production
+23.16 — gRPC / HTTP Server
+Variable	Required	Default	Description
+HTTP_PORT	No	3000	HTTP REST server port
+GRPC_PORT	No	50051	gRPC server port
+API_KEY	If server exposed	""	Server API key (for auth middleware)
+CORS_ORIGINS	No	http://localhost:1420	Allowed CORS origins (Tauri default)
+MAX_REQUEST_SIZE_MB	No	50	Max HTTP request body size
+
+
+
+
+
+PART 24 — API Interface Contracts
+This part defines the full API surface of the system: gRPC service contracts, HTTP REST endpoints, MCP tool schemas, IPC commands (Tauri), and the internal TypeScript interfaces that glue it all together.
+
+24.1 — gRPC Service Contracts
+Defined in apps/cowork-server/src/grpc/proto/.
+
+AgentService (agent.proto)
+protobuf
+
+syntax = "proto3";
+package cowork;
+
+service AgentService {
+  // Run a single agent turn (non-streaming)
+  rpc Run (RunRequest) returns (RunResponse);
+
+  // Run with streaming tool-use events + final response
+  rpc Stream (RunRequest) returns (stream AgentEvent);
+
+  // Interrupt a running session
+  rpc Interrupt (InterruptRequest) returns (InterruptResponse);
+}
+
+message RunRequest {
+  string session_id    = 1; // empty = new session
+  string prompt        = 2;
+  string project       = 3; // project name
+  string provider      = 4; // override default provider
+  string model         = 5; // override default model
+  bool   non_interactive = 6;
+}
+
+message RunResponse {
+  string session_id = 1;
+  string response   = 2; // final text response
+  int32  input_tokens  = 3;
+  int32  output_tokens = 4;
+  repeated ToolCallRecord tool_calls = 5;
+}
+
+message AgentEvent {
+  oneof event {
+    TextDelta     text_delta    = 1;
+    ToolCallStart tool_start    = 2;
+    ToolCallEnd   tool_end      = 3;
+    AgentDone     done          = 4;
+    AgentError    error         = 5;
+  }
+}
+
+message TextDelta       { string delta = 1; }
+message ToolCallStart   { string tool_name = 1; string input_json = 2; }
+message ToolCallEnd     { string tool_name = 1; string result_json = 2; bool error = 3; }
+message AgentDone       { string final_text = 1; int32 total_tokens = 2; }
+message AgentError      { string code = 1; string message = 2; }
+message ToolCallRecord  { string name = 1; string input = 2; string result = 3; }
+message InterruptRequest { string session_id = 1; }
+message InterruptResponse { bool ok = 1; }
+SessionService (session.proto)
+protobuf
+
+service SessionService {
+  rpc Create  (CreateSessionRequest)  returns (Session);
+  rpc Get     (SessionIdRequest)      returns (Session);
+  rpc List    (ListSessionsRequest)   returns (SessionList);
+  rpc Archive (SessionIdRequest)      returns (ArchiveResponse);
+  rpc Delete  (SessionIdRequest)      returns (DeleteResponse);
+}
+
+message Session {
+  string session_id  = 1;
+  string project     = 2;
+  string created_at  = 3;
+  string updated_at  = 4;
+  int32  turn_count  = 5;
+  int32  token_count = 6;
+  string status      = 7; // active | archived | compacted
+}
+
+message CreateSessionRequest { string project = 1; }
+message SessionIdRequest     { string session_id = 1; }
+message ListSessionsRequest  { string project = 1; int32 limit = 2; }
+message SessionList          { repeated Session sessions = 1; }
+message ArchiveResponse      { bool ok = 1; }
+message DeleteResponse       { bool ok = 1; }
+24.2 — HTTP REST API Endpoints
+Base URL: http://localhost:3000/api/v1
+
+All endpoints require Authorization: Bearer {API_KEY} header if API_KEY env var is set.
+
+Agent
+Method	Path	Description
+POST	/agent/run	Run a single agent turn (blocking)
+POST	/agent/stream	Run with SSE streaming events
+POST	/agent/interrupt	Interrupt active session turn
+POST /agent/run — Request Body:
+
+JSON
+
+{
+  "session_id": "string (optional, omit for new session)",
+  "prompt": "string (required)",
+  "project": "string (optional)",
+  "provider": "string (optional)",
+  "model": "string (optional)"
+}
+POST /agent/run — Response:
+
+JSON
+
+{
+  "session_id": "string",
+  "response": "string",
+  "input_tokens": 0,
+  "output_tokens": 0,
+  "tool_calls": [
+    { "name": "string", "input": {}, "result": {}, "error": false }
+  ]
+}
+POST /agent/stream — SSE Event Types:
+
+text
+
+event: text_delta     data: {"delta": "string"}
+event: tool_start     data: {"tool_name": "string", "input": {}}
+event: tool_end       data: {"tool_name": "string", "result": {}, "error": false}
+event: done           data: {"final_text": "string", "total_tokens": 0}
+event: error          data: {"code": "string", "message": "string"}
+Sessions
+Method	Path	Description
+POST	/sessions	Create new session
+GET	/sessions	List sessions (?project=&limit=)
+GET	/sessions/:id	Get session details
+POST	/sessions/:id/archive	Archive session
+DELETE	/sessions/:id	Delete session
+Memory
+Method	Path	Description
+GET	/memory	List memories (?project=&query=&limit=)
+POST	/memory	Save a memory
+GET	/memory/:id	Get single memory
+DELETE	/memory/:id	Delete memory
+POST	/memory/search	Hybrid search (BM25 + semantic + RRF)
+POST /memory — Request Body:
+
+JSON
+
+{
+  "project": "string",
+  "content": "string",
+  "tags": ["string"],
+  "importance": "low | medium | high"
+}
+POST /memory/search — Request Body:
+
+JSON
+
+{
+  "project": "string",
+  "query": "string",
+  "limit": 10,
+  "mode": "hybrid | semantic | keyword"
+}
+POST /memory/search — Response:
+
+JSON
+
+{
+  "results": [
+    {
+      "id": "string",
+      "content": "string",
+      "tags": [],
+      "score": 0.0,
+      "view": "preview | expanded | raw"
+    }
+  ]
+}
+Knowledge: Wiki
+Method	Path	Description
+GET	/wiki/pages	List all wiki pages
+GET	/wiki/pages/:slug	Get a wiki page
+POST	/wiki/ingest	Ingest a source into wiki
+POST	/wiki/compile	Trigger incremental compilation
+POST	/wiki/query	Query wiki (with optional ?save=true)
+POST	/wiki/lint	Lint pages against schema
+Knowledge: Graph
+Method	Path	Description
+POST	/graph/build	Build/rebuild the knowledge graph
+GET	/graph/report	Get latest GRAPH_REPORT.md
+POST	/graph/query	Query the graph (neighbors/paths/clusters)
+POST /graph/query — Request Body:
+
+JSON
+
+{
+  "type": "neighbors | paths | cluster | search",
+  "node": "string (for neighbors/paths)",
+  "query": "string (for search)",
+  "depth": 2
+}
+Health & System
+Method	Path	Description
+GET	/health	Liveness check
+GET	/health/ready	Readiness check (providers reachable, state dir exists)
+GET	/status	Full system status (providers, daemon, sessions, tokens)
+POST	/audit	Run SecurityAudit and return findings
+GET /status — Response:
+
+JSON
+
+{
+  "version": "string",
+  "providers": {
+    "active": "string",
+    "available": ["string"],
+    "healthy": true
+  },
+  "daemon": {
+    "enabled": false,
+    "last_tick": "ISO8601 | null"
+  },
+  "sessions": {
+    "active_count": 0,
+    "total_count": 0
+  },
+  "memory": {
+    "total_entries": 0,
+    "index_lines": 0
+  }
+}
+24.3 — MCP Tool Schemas
+MCP servers expose tools using the standard MCP JSON-RPC 2.0 protocol over stdio or HTTP.
+
+Graphify MCP (packages/graphify/src/mcp/)
+JSON
+
+{
+  "tools": [
+    {
+      "name": "graphify_build",
+      "description": "Build or rebuild the knowledge graph from source files",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source_dir": { "type": "string" },
+          "languages":  { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    {
+      "name": "graphify_query",
+      "description": "Query the knowledge graph for neighbors, paths, or clusters",
+      "inputSchema": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type":  { "type": "string", "enum": ["neighbors", "paths", "cluster", "search"] },
+          "node":  { "type": "string" },
+          "query": { "type": "string" },
+          "depth": { "type": "number", "default": 2 }
+        }
+      }
+    },
+    {
+      "name": "graphify_report",
+      "description": "Return the current GRAPH_REPORT.md summary",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
+LLMWiki MCP (packages/wiki/src/mcp/)
+JSON
+
+{
+  "tools": [
+    {
+      "name": "wiki_query",
+      "description": "Query the compiled wiki",
+      "inputSchema": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": { "type": "string" },
+          "save":  { "type": "boolean", "default": false }
+        }
+      }
+    },
+    {
+      "name": "wiki_ingest",
+      "description": "Ingest a source file or URL into the wiki",
+      "inputSchema": {
+        "type": "object",
+        "required": ["source"],
+        "properties": {
+          "source": { "type": "string" },
+          "type":   { "type": "string", "enum": ["file", "url", "text"] }
+        }
+      }
+    },
+    {
+      "name": "wiki_compile",
+      "description": "Trigger incremental wiki compilation",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "force": { "type": "boolean", "default": false }
+        }
+      }
+    },
+    {
+      "name": "wiki_lint",
+      "description": "Lint all wiki pages against schema.md",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
+24.4 — Tauri IPC Command Contracts
+Defined in packages/desktop/src-tauri/src/commands/. Called from the frontend via invoke().
+
+TypeScript
+
+// Agent commands
+invoke('agent_run',       { sessionId?: string, prompt: string, project?: string })
+  → Promise<{ sessionId: string, response: string, toolCalls: ToolCallRecord[] }>
+
+invoke('agent_interrupt', { sessionId: string })
+  → Promise<{ ok: boolean }>
+
+// Session commands
+invoke('session_create',  { project: string })
+  → Promise<Session>
+
+invoke('session_list',    { project: string, limit?: number })
+  → Promise<Session[]>
+
+invoke('session_archive', { sessionId: string })
+  → Promise<{ ok: boolean }>
+
+// Memory commands
+invoke('memory_save',     { project: string, content: string, tags?: string[] })
+  → Promise<{ id: string }>
+
+invoke('memory_search',   { project: string, query: string, limit?: number })
+  → Promise<MemoryResult[]>
+
+invoke('memory_delete',   { id: string })
+  → Promise<{ ok: boolean }>
+
+// Settings commands
+invoke('settings_get',    {})
+  → Promise<Settings>
+
+invoke('settings_set',    { patch: Partial<Settings> })
+  → Promise<{ ok: boolean }>
+
+// KAIROS daemon commands
+invoke('kairos_start',    {})
+  → Promise<{ ok: boolean }>
+
+invoke('kairos_stop',     {})
+  → Promise<{ ok: boolean }>
+
+invoke('kairos_status',   {})
+  → Promise<{ enabled: boolean, lastTick: string | null }>
+
+// System commands
+invoke('health_check',    {})
+  → Promise<SystemStatus>
+
+invoke('security_audit',  {})
+  → Promise<AuditFinding[]>
+24.5 — Core TypeScript Interface Contracts
+These are the shared types that cross package boundaries. Defined in packages/core/src/types/.
+
+TypeScript
+
+// packages/core/src/types/Message.ts
+export interface Message {
+  role:    'user' | 'assistant' | 'tool_result';
+  content: string | ContentBlock[];
+  cacheControl?: 'ephemeral'; // PART 20: prompt cache boundary marker
+}
+
+export type ContentBlock =
+  | { type: 'text';        text: string }
+  | { type: 'tool_use';    id: string; name: string; input: Record<string, unknown> }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+
+// packages/core/src/types/Tool.ts
+export interface ToolDefinition {
+  name:            string;
+  description:     string;
+  inputSchema:     Record<string, unknown>; // JSON Schema
+  permissionLevel: PermissionLevel;
+  estimatedCost?:  'free' | 'cheap' | 'moderate' | 'expensive';
+}
+
+export type PermissionLevel =
+  | 'READ_ONLY'
+  | 'WRITE_LOCAL'
+  | 'NETWORK'
+  | 'SHELL'
+  | 'SYSTEM'
+  | 'DANGEROUS';
+
+export interface ToolResult {
+  content:  string;
+  isError:  boolean;
+  metadata?: Record<string, unknown>;
+}
+
+// packages/core/src/types/Session.ts
+export interface Session {
+  sessionId:   string;
+  project:     string;
+  createdAt:   string;
+  updatedAt:   string;
+  turnCount:   number;
+  tokenCount:  number;
+  status:      'active' | 'archived' | 'compacted';
+  history:     Message[];
+}
+
+// packages/core/src/types/Memory.ts
+export interface MemoryEntry {
+  id:         string;
+  project:    string;
+  content:    string;
+  tags:       string[];
+  importance: 'low' | 'medium' | 'high';
+  createdAt:  string;
+  embedding?: number[];
+}
+
+export interface MemoryResult extends MemoryEntry {
+  score: number;
+  view:  'preview' | 'expanded' | 'raw';
+}
+
+// packages/core/src/types/Provider.ts
+export interface ProviderConfig {
+  name:    string;
+  model:   string;
+  baseUrl?: string;
+  apiKey?: string; // resolved from env at runtime, never stored
+  maxTokens?:  number;
+  temperature?: number;
+}
+
+export interface StreamEvent {
+  type:  'text_delta' | 'tool_start' | 'tool_end' | 'done' | 'error';
+  data:  Record<string, unknown>;
+}
+
+// packages/core/src/types/Agent.ts
+export interface AgentRunOptions {
+  sessionId?:      string;
+  prompt:          string;
+  project?:        string;
+  provider?:       string;
+  model?:          string;
+  maxTurns?:       number;
+  nonInteractive?: boolean;
+  onEvent?:        (event: StreamEvent) => void;
+}
+
+export interface AgentRunResult {
+  sessionId:  string;
+  response:   string;
+  inputTokens:  number;
+  outputTokens: number;
+  toolCalls:  ToolCallRecord[];
+}
+
+export interface ToolCallRecord {
+  name:   string;
+  input:  Record<string, unknown>;
+  result: string;
+  error:  boolean;
+}
+
+// packages/core/src/types/Settings.ts
+// (abbreviated — full schema defined in SettingsSchema.ts with Zod)
+export interface Settings {
+  provider:   ProviderConfig;
+  fallback?:  ProviderConfig;
+  permissions: {
+    mode:              'default' | 'strict' | 'audit-only';
+    allowDangerous:    boolean;
+    sandboxEnabled:    boolean;
+    bashAllowedCmds:   string[];
+    bashBlockedCmds:   string[];
+    allowedDomains:    string[];
+  };
+  memory: {
+    maxIndexLines:    number;
+    autoDreamEnabled: boolean;
+    idleMinutes:      number;
+  };
+  compaction: {
+    threshold:      number;
+    reserveBuffer:  number;
+    maxFailures:    number;
+  };
+  cache: {
+    enabled:      boolean;
+    stickyLatch:  boolean;
+  };
+  kairos: {
+    enabled:          boolean;
+    tickIntervalSecs: number;
+    quietHoursStart:  number;
+    quietHoursEnd:    number;
+  };
+  mcpServers:    MCPServerConfig[];
+  hooks:         HookConfig[];
+  telemetry:     boolean;
+}
+
+export interface MCPServerConfig {
+  name:     string;
+  command:  string;
+  args?:    string[];
+  env?:     Record<string, string>;
+}
+
+export interface HookConfig {
+  event:    'PreToolUse' | 'PostToolUse' | 'Stop';
+  toolName?: string; // if omitted, applies to all tools
+  command:  string;
+}
+24.6 — Internal Event Bus Contracts
+For cross-package event communication (daemon → desktop, gateway → agent, etc.):
+
+TypeScript
+
+// Typed events emitted on the internal EventEmitter / IPC bus
+type CoworkEvent =
+  | { type: 'agent:turn_start';   sessionId: string }
+  | { type: 'agent:turn_end';     sessionId: string; tokens: number }
+  | { type: 'agent:tool_call';    sessionId: string; tool: string; input: unknown }
+  | { type: 'agent:tool_result';  sessionId: string; tool: string; result: string; error: boolean }
+  | { type: 'agent:error';        sessionId: string; code: string; message: string }
+  | { type: 'memory:saved';       project: string; id: string }
+  | { type: 'memory:dream_start'; project: string }
+  | { type: 'memory:dream_end';   project: string; consolidated: number }
+  | { type: 'kairos:tick';        timestamp: string; acting: boolean }
+  | { type: 'kairos:webhook';     source: string; event: string }
+  | { type: 'gateway:message_in'; channel: string; userId: string; text: string }
+  | { type: 'gateway:message_out';channel: string; userId: string; text: string }
+  | { type: 'graph:build_start';  sourceDir: string }
+  | { type: 'graph:build_end';    nodeCount: number; edgeCount: number }
+  | { type: 'wiki:compile_start'; sourceCount: number }
+  | { type: 'wiki:compile_end';   pagesWritten: number }
+  | { type: 'security:audit';     findings: AuditFinding[] }
+  | { type: 'permission:request'; tool: string; level: PermissionLevel; approved?: boolean };
+
+export interface AuditFinding {
+  severity: 'info' | 'warn' | 'critical';
+  code:     string;
+  message:  string;
+  path?:    string;
+}
+With PART 22, PART 23, and PART 24 now written, the full 24-part plan is complete. Here's a quick orientation of what's now done end-to-end:
+
+Parts	What they cover
+PART 0–1	Source foundation + master architecture diagram
+PART 2	Monorepo scaffold
+PART 3–8	Core engine layers (loop, tools, providers, memory, multi-agent, compression)
+PART 9	Desktop app
+PART 10–15	Knowledge + autonomous systems (graph, wiki, KAIROS, AutoResearch, MiroFish, gateway)
+PART 16–20	Cross-cutting concerns (security, commands, skills, settings, cache)
+PART 21	Build timeline
+PART 22	Full file tree (every file, annotated)
+PART 23	Every env var, grouped by subsystem, with defaults
+PART 24	Full API contracts: gRPC, REST, MCP, Tauri IPC, TypeScript interfaces, event bus
+
