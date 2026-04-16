@@ -4680,3 +4680,2176 @@ PART 22	Full file tree (every file, annotated)
 PART 23	Every env var, grouped by subsystem, with defaults
 PART 24	Full API contracts: gRPC, REST, MCP, Tauri IPC, TypeScript interfaces, event bus
 
+
+
+**All the phases and the complete build with code, the database schema, the system prompts and everything else required to build and end to end comprehensive system
+**
+
+
+The Complete Build Has 7 Phases over 14 Weeks
+Here is the exact breakdown from PART 21 — Build Phases & Execution Timeline:
+
+Phase 1 — Foundation (Weeks 1–2)
+"Get the core working end-to-end before anything else"
+
+queryLoop.ts — basic agent loop running
+QueryEngine.ts — model API call (streaming + retry)
+ProviderRouter.ts — Anthropic + OpenAI + Ollama shim working
+Tool.ts + ToolSchema.ts — base tool factory
+First tool set: Bash, ReadFile, WriteFile, EditFile, Glob, Grep, WebFetch
+PermissionGate.ts — permission levels enforced
+SettingsChain.ts — 5-level config cascade resolving
+SecurityAudit.ts — pre-session audit running
+Basic CLI (apps/cowork-cli) functional end-to-end
+Phase 2 — Memory Architecture (Weeks 3–4)
+"Give the agent a brain that persists"
+
+MemorySystem.ts + MemoryIndex.ts — MEMORY.md capped index
+MemorySearch.ts — hybrid BM25 + semantic + RRF search
+MemoryEmbedder.ts — embedding generation (Ollama-compatible)
+SessionMemory.ts — in-session working memory
+AutoDream.ts — overnight transcript consolidation
+Memory tools: MemorySaveTool, MemorySearchTool, MemoryDeleteTool
+Context compressor: MicroCompact, AutoCompact, FullCompact, CompactionCircuit
+Phase 3 — Knowledge Systems (Weeks 5–6)
+"Give the agent compound, persistent knowledge beyond raw memory"
+
+packages/graphify/ fully operational:
+Tree-sitter AST extraction
+Leiden clustering
+GRAPH_REPORT.md generation
+preSearch.ts hook installed
+Graphify MCP server running
+packages/wiki/ fully operational:
+SHA256 incremental compiler
+purpose.md + schema.md in place
+LLMWiki MCP server running
+/wiki-ingest, /wiki-query, /wiki-compile, /wiki-lint commands working
+CacheBuilder.ts + StickyLatch.ts — prompt cache engineering live
+Phase 4 — Desktop Application (Weeks 7–8)
+"Wrap everything in a UI humans actually want to use"
+
+Tauri app scaffold (packages/desktop/)
+Three-panel layout: Left (file/knowledge tree + activity), Center (chat + terminal + graph), Right (preview panes)
+All sidebar modes: Chat, Wiki, Graph, Search, Research, Simulate, Settings, DeepResearch
+Modals: BYOK, Permission, UltraPlan, Provider
+Hooks: useAgent, useMemory, useProvider, useKairos, useSession
+BuddyWidget.tsx companion component
+Full Tauri IPC command wiring (agent, session, memory, settings, kairos)
+Phase 5 — Multi-Agent + Daemon (Weeks 9–10)
+"Make it parallel and always-on"
+
+AgentCoordinator.ts + WorkerPool.ts — coordinator/worker orchestration
+WorktreeManager.ts — git worktree isolation per parallel worker
+TaskQueue.ts + ResultCollector.ts — distributed task management
+AgentTool.ts, TeamCreateTool.ts — spawn subagents/teams
+KAIROSDaemon.ts — heartbeat loop with TickDecider
+QuietHours.ts + DailyLog.ts
+DreamRunner.ts — AutoDream on idle
+WebhookServer.ts + GitHubWebhook.ts
+Phase 6 — Messaging + AutoResearch (Weeks 11–12)
+"Make it reachable everywhere and self-improving"
+
+packages/gateway/ fully operational:
+Telegram, Discord (thread-isolated), WhatsApp channels
+GatewayManager, MessageRouter, SessionIsolator, TranscriptSaver
+ComposioHub.ts — 500+ app integrations
+packages/research/ fully operational:
+AutoResearchLoop.ts — experiment runner
+Evaluator.ts — scoring with threshold
+Journal.ts — commit-per-experiment
+Rollback.ts — git revert on failure
+/autorun, /research, /deepresearch slash commands live
+Phase 7 — Simulation + Polish (Weeks 13–14)
+"Complete the knowledge flywheel + production-harden everything"
+
+packages/simulation/ fully operational:
+Docker-compose stack (Ollama + Neo4j) running offline
+GraphBuilder, MemoryInjector, GraphRAG, PersonaGenerator
+TwitterSim, RedditSim — dual-platform dynamics
+AgentChat, Counterfactual — interactive simulation
+ReportGenerator — export findings to LLMWiki
+apps/cowork-server/ — gRPC + HTTP REST server production-ready
+Full slash command catalog complete (~87 commands)
+Full skill system: SkillEngine, SkillLoader, SkillRunner + 5 built-in skills
+Telemetry.ts, SettingsMigrator.ts — production hardening
+Security audit CI integration
+End-to-end integration tests across all packages
+Summary Table
+Phase	Weeks	Focus	Key Deliverable
+1	1–2	Foundation	Working CLI agent with tools + providers
+2	3–4	Memory	Persistent hybrid memory + compression
+3	5–6	Knowledge	Graphify + LLMWiki + prompt caching
+4	7–8	Desktop	Full Tauri UI (3-panel + all modes)
+5	9–10	Multi-Agent + Daemon	Parallel workers + KAIROS always-on
+6	11–12	Messaging + Research	Gateway + AutoResearch loop
+7	13–14	Simulation + Polish	MiroFish + gRPC server + hardening
+
+
+
+Main Build : All the phases with code.
+
+Phase 1 — Divided + Phase 1.1 Complete Runnable Build
+Phase Division
+Sub-Phase	Weeks	Focus
+Phase 1.1	Week 1, Days 1–3	Monorepo scaffold + core types + database schema + settings + system prompts + utilities
+Phase 1.2	Week 1, Days 4–5 + Week 2, Day 1	Provider router + QueryEngine (Anthropic + OpenAI + Ollama streaming)
+Phase 1.3	Week 2, Days 2–5	Agent loop + tool registry + first 7 tools + PermissionGate + CLI
+PHASE 1.1 — Complete Runnable Code
+Step 1 — Monorepo Root Setup
+package.json
+JSON
+
+{
+  "name": "locoworker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first BYOK AI coworker agent",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build":     "turbo run build",
+    "dev":       "turbo run dev --parallel",
+    "test":      "turbo run test",
+    "lint":      "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean":     "turbo run clean",
+    "cli":       "pnpm --filter @locoworker/cli dev",
+    "db:migrate":"pnpm --filter @locoworker/core db:migrate",
+    "db:studio": "pnpm --filter @locoworker/core db:studio"
+  },
+  "devDependencies": {
+    "@types/node":        "^20.14.0",
+    "turbo":              "^2.0.0",
+    "typescript":         "^5.5.0",
+    "eslint":             "^9.0.0",
+    "prettier":           "^3.3.0",
+    "vitest":             "^1.6.0",
+    "@vitest/coverage-v8":"^1.6.0"
+  },
+  "packageManager": "pnpm@9.4.0"
+}
+pnpm-workspace.yaml
+YAML
+
+packages:
+  - "apps/*"
+  - "packages/*"
+turbo.json
+JSON
+
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": [".env"],
+  "pipeline": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "outputs": ["coverage/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"]
+    },
+    "lint": {},
+    "clean": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    }
+  }
+}
+tsconfig.base.json
+JSON
+
+{
+  "compilerOptions": {
+    "target":           "ES2022",
+    "module":           "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib":              ["ES2022"],
+    "strict":           true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess":   true,
+    "noImplicitOverride":         true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck":     true,
+    "declaration":      true,
+    "declarationMap":   true,
+    "sourceMap":        true,
+    "outDir":           "dist",
+    "rootDir":          "src",
+    "resolveJsonModule": true,
+    "esModuleInterop":  true
+  },
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
+.env.example
+Bash
+
+# ─── PROVIDER API KEYS (BYOK) ───────────────────────────────────────────────
+ANTHROPIC_API_KEY=
+OPENAI_API_KEY=
+GEMINI_API_KEY=
+DEEPSEEK_API_KEY=
+
+# ─── LOCAL LLM ───────────────────────────────────────────────────────────────
+OLLAMA_BASE_URL=http://localhost:11434
+LMSTUDIO_BASE_URL=http://localhost:1234
+LOCAL_MODEL_NAME=llama3
+
+# ─── PROVIDER ROUTER ─────────────────────────────────────────────────────────
+DEFAULT_PROVIDER=anthropic
+DEFAULT_MODEL=claude-opus-4-5
+FALLBACK_PROVIDER=openai
+PROVIDER_TIMEOUT_MS=30000
+PROVIDER_MAX_RETRIES=3
+
+# ─── CORE AGENT ──────────────────────────────────────────────────────────────
+COWORK_STATE_DIR=~/.cowork
+COWORK_PROJECT=default
+COWORK_MAX_TURNS=50
+COWORK_MAX_TOKENS=200000
+COWORK_VERBOSE=false
+COWORK_LOG_LEVEL=info
+COWORK_TELEMETRY=false
+COWORK_NON_INTERACTIVE=false
+
+# ─── CONTEXT COMPRESSION ─────────────────────────────────────────────────────
+COMPACT_THRESHOLD=0.85
+COMPACT_RESERVE_BUFFER=4096
+COMPACT_MAX_FAILURES=3
+MICROCOMPACT_MAX_TOOL_OUTPUT=2000
+
+# ─── MEMORY ──────────────────────────────────────────────────────────────────
+MEMORY_MAX_INDEX_LINES=200
+MEMORY_EMBEDDING_MODEL=nomic-embed-text
+MEMORY_EMBEDDING_URL=http://localhost:11434
+MEMORY_RRF_K=60
+AUTODREAM_ENABLED=true
+AUTODREAM_IDLE_MINUTES=30
+
+# ─── CACHE ───────────────────────────────────────────────────────────────────
+CACHE_ENABLED=true
+CACHE_STATIC_TTL_SECONDS=3600
+CACHE_BREAK_STRICT=true
+CACHE_STICKY_LATCH=true
+
+# ─── SECURITY ────────────────────────────────────────────────────────────────
+PERMISSION_MODE=default
+ALLOW_DANGEROUS_TOOLS=false
+SANDBOX_ENABLED=true
+AUDIT_ON_START=true
+BASH_ALLOWED_COMMANDS=
+BASH_BLOCKED_COMMANDS=rm -rf,sudo,mkfs,dd,shutdown,reboot
+BASH_TIMEOUT_SECONDS=60
+ALLOWED_DOMAINS=
+
+# ─── SERVER ──────────────────────────────────────────────────────────────────
+HTTP_PORT=3000
+GRPC_PORT=50051
+API_KEY=
+CORS_ORIGINS=http://localhost:1420
+.gitignore
+gitignore
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Runtime state (never commit)
+.cowork/
+graphify-out/
+
+# Turbo
+.turbo/
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Tauri
+packages/desktop/src-tauri/target/
+Step 2 — Core Package Scaffold
+packages/core/package.json
+JSON
+
+{
+  "name": "@locoworker/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types":  "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build":      "tsc -p tsconfig.json",
+    "dev":        "tsc -p tsconfig.json --watch",
+    "test":       "vitest run",
+    "test:watch": "vitest",
+    "typecheck":  "tsc --noEmit",
+    "lint":       "eslint src/",
+    "clean":      "rm -rf dist",
+    "db:migrate": "node --loader ts-node/esm src/db/migrate.ts",
+    "db:studio":  "drizzle-kit studio"
+  },
+  "dependencies": {
+    "better-sqlite3":     "^9.6.0",
+    "drizzle-orm":        "^0.31.0",
+    "zod":                "^3.23.0",
+    "dotenv":             "^16.4.0",
+    "chalk":              "^5.3.0",
+    "winston":            "^3.13.0",
+    "p-retry":            "^6.2.0",
+    "p-timeout":          "^6.1.0",
+    "tiktoken":           "^1.0.15",
+    "js-tiktoken":        "^1.0.12",
+    "nanoid":             "^5.0.7",
+    "date-fns":           "^3.6.0",
+    "lodash-es":          "^4.17.21",
+    "eventemitter3":      "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/lodash-es":      "^4.17.12",
+    "drizzle-kit":           "^0.22.0",
+    "ts-node":               "^10.9.2",
+    "vitest":                "^1.6.0"
+  }
+}
+packages/core/tsconfig.json
+JSON
+
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
+Step 3 — Database Schema (SQLite + Drizzle ORM)
+packages/core/src/db/schema.ts
+TypeScript
+
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  blob,
+  index,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
+import { sql } from 'drizzle-orm';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SESSIONS
+// Stores every agent conversation session
+// ─────────────────────────────────────────────────────────────────────────────
+export const sessions = sqliteTable('sessions', {
+  id:          text('id').primaryKey(),                    // nanoid
+  project:     text('project').notNull(),                  // project name
+  title:       text('title'),                              // auto-generated title
+  status:      text('status', {
+    enum: ['active', 'archived', 'compacted']
+  }).notNull().default('active'),
+  turnCount:   integer('turn_count').notNull().default(0),
+  inputTokens: integer('input_tokens').notNull().default(0),
+  outputTokens:integer('output_tokens').notNull().default(0),
+  provider:    text('provider'),                           // provider used
+  model:       text('model'),                              // model used
+  createdAt:   text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt:   text('updated_at').notNull()
+    .default(sql`(datetime('now'))`),
+  archivedAt:  text('archived_at'),
+  metadata:    text('metadata', { mode: 'json' })          // arbitrary JSON
+    .$type<Record<string, unknown>>(),
+}, (t) => ({
+  projectIdx:   index('sessions_project_idx').on(t.project),
+  statusIdx:    index('sessions_status_idx').on(t.status),
+  createdAtIdx: index('sessions_created_at_idx').on(t.createdAt),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MESSAGES
+// Every message in every session (full conversation history)
+// ─────────────────────────────────────────────────────────────────────────────
+export const messages = sqliteTable('messages', {
+  id:           text('id').primaryKey(),
+  sessionId:    text('session_id').notNull()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  role:         text('role', {
+    enum: ['user', 'assistant', 'tool_result', 'system']
+  }).notNull(),
+  content:      text('content').notNull(),                 // raw text or JSON
+  contentType:  text('content_type', {
+    enum: ['text', 'tool_use', 'tool_result', 'mixed']
+  }).notNull().default('text'),
+  turnIndex:    integer('turn_index').notNull(),            // position in session
+  inputTokens:  integer('input_tokens').default(0),
+  outputTokens: integer('output_tokens').default(0),
+  cacheRead:    integer('cache_read', { mode: 'boolean' }).default(false),
+  cacheWrite:   integer('cache_write', { mode: 'boolean' }).default(false),
+  createdAt:    text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  sessionIdx:   index('messages_session_idx').on(t.sessionId),
+  roleIdx:      index('messages_role_idx').on(t.role),
+  turnIdx:      index('messages_turn_idx').on(t.sessionId, t.turnIndex),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL CALLS
+// Every tool invocation within a session
+// ─────────────────────────────────────────────────────────────────────────────
+export const toolCalls = sqliteTable('tool_calls', {
+  id:             text('id').primaryKey(),
+  sessionId:      text('session_id').notNull()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  messageId:      text('message_id').notNull()
+    .references(() => messages.id, { onDelete: 'cascade' }),
+  toolName:       text('tool_name').notNull(),
+  toolUseId:      text('tool_use_id').notNull(),           // Anthropic tool_use id
+  input:          text('input', { mode: 'json' }).notNull()
+    .$type<Record<string, unknown>>(),
+  result:         text('result'),                           // raw result string
+  isError:        integer('is_error', { mode: 'boolean' }).notNull().default(false),
+  permissionLevel:text('permission_level').notNull().default('READ_ONLY'),
+  approved:       integer('approved', { mode: 'boolean' }).default(true),
+  durationMs:     integer('duration_ms'),
+  createdAt:      text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  sessionIdx:  index('tool_calls_session_idx').on(t.sessionId),
+  toolNameIdx: index('tool_calls_name_idx').on(t.toolName),
+  errorIdx:    index('tool_calls_error_idx').on(t.isError),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MEMORIES
+// Persistent agent memories (cross-session, per-project)
+// ─────────────────────────────────────────────────────────────────────────────
+export const memories = sqliteTable('memories', {
+  id:          text('id').primaryKey(),
+  project:     text('project').notNull(),
+  content:     text('content').notNull(),
+  summary:     text('summary'),                            // short summary for index
+  tags:        text('tags', { mode: 'json' })
+    .$type<string[]>().notNull().default(sql`'[]'`),
+  importance:  text('importance', {
+    enum: ['low', 'medium', 'high', 'critical']
+  }).notNull().default('medium'),
+  source:      text('source', {
+    enum: ['agent', 'user', 'autodream', 'system']
+  }).notNull().default('agent'),
+  sessionId:   text('session_id')
+    .references(() => sessions.id, { onDelete: 'set null' }),
+  embedding:   blob('embedding'),                          // Float32Array binary
+  accessCount: integer('access_count').notNull().default(0),
+  lastAccessed:text('last_accessed'),
+  createdAt:   text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt:   text('updated_at').notNull()
+    .default(sql`(datetime('now'))`),
+  expiresAt:   text('expires_at'),                         // optional TTL
+}, (t) => ({
+  projectIdx:    index('memories_project_idx').on(t.project),
+  importanceIdx: index('memories_importance_idx').on(t.importance),
+  sourceIdx:     index('memories_source_idx').on(t.source),
+  tagsIdx:       index('memories_tags_idx').on(t.tags),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECTS
+// Project-level configuration and state
+// ─────────────────────────────────────────────────────────────────────────────
+export const projects = sqliteTable('projects', {
+  id:           text('id').primaryKey(),                   // same as name slug
+  name:         text('name').notNull(),
+  displayName:  text('display_name'),
+  description:  text('description'),
+  rootPath:     text('root_path'),                         // absolute path on disk
+  claudeMdPath: text('claude_md_path'),                    // path to CLAUDE.md
+  provider:     text('provider'),                          // project-level override
+  model:        text('model'),                             // project-level override
+  settings:     text('settings', { mode: 'json' })         // project settings blob
+    .$type<Record<string, unknown>>(),
+  totalSessions:integer('total_sessions').notNull().default(0),
+  totalTokens:  integer('total_tokens').notNull().default(0),
+  createdAt:    text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+  updatedAt:    text('updated_at').notNull()
+    .default(sql`(datetime('now'))`),
+  lastActiveAt: text('last_active_at'),
+}, (t) => ({
+  nameUniqueIdx: uniqueIndex('projects_name_unique_idx').on(t.name),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SETTINGS
+// Key-value settings store (typed by scope)
+// ─────────────────────────────────────────────────────────────────────────────
+export const settings = sqliteTable('settings', {
+  id:        text('id').primaryKey(),
+  scope:     text('scope', {
+    enum: ['global', 'project', 'session']
+  }).notNull(),
+  scopeId:   text('scope_id'),                             // project/session id if scoped
+  key:       text('key').notNull(),
+  value:     text('value', { mode: 'json' }).notNull()
+    .$type<unknown>(),
+  valueType: text('value_type', {
+    enum: ['string', 'number', 'boolean', 'object', 'array']
+  }).notNull(),
+  updatedAt: text('updated_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  scopeKeyIdx:   uniqueIndex('settings_scope_key_idx').on(t.scope, t.scopeId, t.key),
+  scopeIdx:      index('settings_scope_idx').on(t.scope),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROVIDER USAGE
+// Track API usage, costs, and rate limit info per provider
+// ─────────────────────────────────────────────────────────────────────────────
+export const providerUsage = sqliteTable('provider_usage', {
+  id:            text('id').primaryKey(),
+  sessionId:     text('session_id')
+    .references(() => sessions.id, { onDelete: 'set null' }),
+  provider:      text('provider').notNull(),
+  model:         text('model').notNull(),
+  inputTokens:   integer('input_tokens').notNull().default(0),
+  outputTokens:  integer('output_tokens').notNull().default(0),
+  cacheReadTokens: integer('cache_read_tokens').default(0),
+  cacheWriteTokens:integer('cache_write_tokens').default(0),
+  estimatedCostUsd: real('estimated_cost_usd').default(0),
+  latencyMs:     integer('latency_ms'),
+  isError:       integer('is_error', { mode: 'boolean' }).default(false),
+  errorCode:     text('error_code'),
+  createdAt:     text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  providerIdx:   index('provider_usage_provider_idx').on(t.provider),
+  createdAtIdx:  index('provider_usage_created_at_idx').on(t.createdAt),
+  sessionIdx:    index('provider_usage_session_idx').on(t.sessionId),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUDIT LOG
+// Security audit findings and permission events
+// ─────────────────────────────────────────────────────────────────────────────
+export const auditLog = sqliteTable('audit_log', {
+  id:          text('id').primaryKey(),
+  sessionId:   text('session_id')
+    .references(() => sessions.id, { onDelete: 'set null' }),
+  event:       text('event', {
+    enum: [
+      'session_start', 'session_end',
+      'tool_approved', 'tool_blocked', 'tool_error',
+      'permission_escalation', 'security_finding',
+      'provider_switch', 'settings_change',
+      'memory_save', 'memory_delete',
+      'audit_run'
+    ]
+  }).notNull(),
+  severity:    text('severity', {
+    enum: ['info', 'warn', 'critical']
+  }).notNull().default('info'),
+  actor:       text('actor', {
+    enum: ['user', 'agent', 'system', 'daemon']
+  }).notNull().default('agent'),
+  subject:     text('subject'),                            // tool name / file path / etc.
+  detail:      text('detail', { mode: 'json' })
+    .$type<Record<string, unknown>>(),
+  createdAt:   text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  eventIdx:    index('audit_log_event_idx').on(t.event),
+  severityIdx: index('audit_log_severity_idx').on(t.severity),
+  sessionIdx:  index('audit_log_session_idx').on(t.sessionId),
+  createdAtIdx:index('audit_log_created_at_idx').on(t.createdAt),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HOOKS
+// Registered PreToolUse / PostToolUse / Stop hooks
+// ─────────────────────────────────────────────────────────────────────────────
+export const hooks = sqliteTable('hooks', {
+  id:        text('id').primaryKey(),
+  project:   text('project'),                              // null = global
+  event:     text('event', {
+    enum: ['PreToolUse', 'PostToolUse', 'Stop']
+  }).notNull(),
+  toolName:  text('tool_name'),                            // null = all tools
+  command:   text('command').notNull(),                    // shell command to run
+  enabled:   integer('enabled', { mode: 'boolean' }).notNull().default(true),
+  createdAt: text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  eventIdx:   index('hooks_event_idx').on(t.event),
+  projectIdx: index('hooks_project_idx').on(t.project),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPACTION LOG
+// Track context compression events
+// ─────────────────────────────────────────────────────────────────────────────
+export const compactionLog = sqliteTable('compaction_log', {
+  id:              text('id').primaryKey(),
+  sessionId:       text('session_id').notNull()
+    .references(() => sessions.id, { onDelete: 'cascade' }),
+  type:            text('type', {
+    enum: ['micro', 'auto', 'full']
+  }).notNull(),
+  tokensBefore:    integer('tokens_before').notNull(),
+  tokensAfter:     integer('tokens_after').notNull(),
+  messagesBefore:  integer('messages_before').notNull(),
+  messagesAfter:   integer('messages_after').notNull(),
+  success:         integer('success', { mode: 'boolean' }).notNull(),
+  errorMessage:    text('error_message'),
+  createdAt:       text('created_at').notNull()
+    .default(sql`(datetime('now'))`),
+}, (t) => ({
+  sessionIdx: index('compaction_log_session_idx').on(t.sessionId),
+}));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TYPE EXPORTS
+// ─────────────────────────────────────────────────────────────────────────────
+export type Session        = typeof sessions.$inferSelect;
+export type NewSession     = typeof sessions.$inferInsert;
+export type Message        = typeof messages.$inferSelect;
+export type NewMessage     = typeof messages.$inferInsert;
+export type ToolCall       = typeof toolCalls.$inferSelect;
+export type NewToolCall    = typeof toolCalls.$inferInsert;
+export type Memory         = typeof memories.$inferSelect;
+export type NewMemory      = typeof memories.$inferInsert;
+export type Project        = typeof projects.$inferSelect;
+export type NewProject     = typeof projects.$inferInsert;
+export type Settings       = typeof settings.$inferSelect;
+export type NewSettings    = typeof settings.$inferInsert;
+export type ProviderUsage  = typeof providerUsage.$inferSelect;
+export type NewProviderUsage = typeof providerUsage.$inferInsert;
+export type AuditLog       = typeof auditLog.$inferSelect;
+export type NewAuditLog    = typeof auditLog.$inferInsert;
+export type Hook           = typeof hooks.$inferSelect;
+export type NewHook        = typeof hooks.$inferInsert;
+export type CompactionLog  = typeof compactionLog.$inferSelect;
+packages/core/src/db/client.ts
+TypeScript
+
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import * as schema from './schema.js';
+
+// ─── Resolve state directory ─────────────────────────────────────────────────
+function resolveStateDir(): string {
+  const raw = process.env['COWORK_STATE_DIR'] ?? '~/.cowork';
+  return raw.startsWith('~')
+    ? path.join(os.homedir(), raw.slice(1))
+    : raw;
+}
+
+// ─── Singleton database instance ─────────────────────────────────────────────
+let _db: ReturnType<typeof drizzle> | null = null;
+let _sqlite: Database.Database | null = null;
+
+export function getDatabase() {
+  if (_db) return _db;
+
+  const stateDir = resolveStateDir();
+  const dbPath   = path.join(stateDir, 'cowork.db');
+
+  // Ensure directory exists
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+
+  _sqlite = new Database(dbPath, {
+    verbose: process.env['COWORK_LOG_LEVEL'] === 'debug'
+      ? console.log
+      : undefined,
+  });
+
+  // Enable WAL mode for better concurrent read performance
+  _sqlite.pragma('journal_mode = WAL');
+  _sqlite.pragma('foreign_keys = ON');
+  _sqlite.pragma('busy_timeout = 5000');
+  _sqlite.pragma('synchronous = NORMAL');
+  _sqlite.pragma('cache_size = -64000');  // 64MB cache
+  _sqlite.pragma('temp_store = MEMORY');
+
+  _db = drizzle(_sqlite, { schema });
+  return _db;
+}
+
+export function closeDatabase(): void {
+  _sqlite?.close();
+  _db    = null;
+  _sqlite = null;
+}
+
+export type DB = ReturnType<typeof getDatabase>;
+export { schema };
+packages/core/src/db/migrate.ts
+TypeScript
+
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { getDatabase } from './client.js';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+async function runMigrations() {
+  console.log('Running database migrations...');
+  const db = getDatabase();
+
+  await migrate(db, {
+    migrationsFolder: path.join(__dirname, '../../migrations'),
+  });
+
+  console.log('Migrations complete.');
+}
+
+runMigrations().catch((err) => {
+  console.error('Migration failed:', err);
+  process.exit(1);
+});
+packages/core/drizzle.config.ts
+TypeScript
+
+import type { Config } from 'drizzle-kit';
+import path from 'node:path';
+import os from 'node:os';
+
+const stateDir = (process.env['COWORK_STATE_DIR'] ?? '~/.cowork')
+  .replace(/^~/, os.homedir());
+
+export default {
+  schema:    './src/db/schema.ts',
+  out:       './migrations',
+  driver:    'better-sqlite',
+  dbCredentials: {
+    url: path.join(stateDir, 'cowork.db'),
+  },
+  verbose:   true,
+  strict:    true,
+} satisfies Config;
+Step 4 — Core TypeScript Types
+packages/core/src/types/Message.ts
+TypeScript
+
+// ─── Raw content blocks (mirrors Anthropic's API) ────────────────────────────
+export type TextBlock = {
+  type:         'text';
+  text:         string;
+  cacheControl?: { type: 'ephemeral' };  // Phase 1.1: prompt cache boundary
+};
+
+export type ToolUseBlock = {
+  type:  'tool_use';
+  id:    string;
+  name:  string;
+  input: Record<string, unknown>;
+};
+
+export type ToolResultBlock = {
+  type:        'tool_result';
+  tool_use_id: string;
+  content:     string | TextBlock[];
+  is_error?:   boolean;
+};
+
+export type ContentBlock = TextBlock | ToolUseBlock | ToolResultBlock;
+
+// ─── Message as used in the agent loop ───────────────────────────────────────
+export interface AgentMessage {
+  role:    'user' | 'assistant';
+  content: string | ContentBlock[];
+}
+
+// ─── System prompt blocks ─────────────────────────────────────────────────────
+export interface SystemBlock {
+  type:          'text';
+  text:          string;
+  cacheControl?: { type: 'ephemeral' };
+}
+
+// ─── Streaming event types ───────────────────────────────────────────────────
+export type StreamEventType =
+  | 'text_delta'
+  | 'tool_start'
+  | 'tool_end'
+  | 'done'
+  | 'error'
+  | 'usage';
+
+export interface TextDeltaEvent {
+  type:  'text_delta';
+  delta: string;
+}
+
+export interface ToolStartEvent {
+  type:      'tool_start';
+  toolName:  string;
+  toolUseId: string;
+  input:     Record<string, unknown>;
+}
+
+export interface ToolEndEvent {
+  type:      'tool_end';
+  toolName:  string;
+  toolUseId: string;
+  result:    string;
+  isError:   boolean;
+  durationMs:number;
+}
+
+export interface DoneEvent {
+  type:         'done';
+  finalText:    string;
+  inputTokens:  number;
+  outputTokens: number;
+  stopReason:   string;
+}
+
+export interface ErrorEvent {
+  type:    'error';
+  code:    string;
+  message: string;
+}
+
+export interface UsageEvent {
+  type:             'usage';
+  inputTokens:      number;
+  outputTokens:     number;
+  cacheReadTokens:  number;
+  cacheWriteTokens: number;
+}
+
+export type StreamEvent =
+  | TextDeltaEvent
+  | ToolStartEvent
+  | ToolEndEvent
+  | DoneEvent
+  | ErrorEvent
+  | UsageEvent;
+packages/core/src/types/Tool.ts
+TypeScript
+
+import type { ZodSchema } from 'zod';
+
+// ─── Permission levels (READ_ONLY → DANGEROUS) ───────────────────────────────
+export const PERMISSION_LEVELS = [
+  'READ_ONLY',
+  'WRITE_LOCAL',
+  'NETWORK',
+  'SHELL',
+  'SYSTEM',
+  'DANGEROUS',
+] as const;
+
+export type PermissionLevel = typeof PERMISSION_LEVELS[number];
+
+export const PERMISSION_RANK: Record<PermissionLevel, number> = {
+  READ_ONLY:   0,
+  WRITE_LOCAL: 1,
+  NETWORK:     2,
+  SHELL:       3,
+  SYSTEM:      4,
+  DANGEROUS:   5,
+};
+
+// ─── Tool definition (what the agent sees) ───────────────────────────────────
+export interface ToolDefinition {
+  name:            string;
+  description:     string;
+  inputSchema:     Record<string, unknown>;   // JSON Schema for provider
+  permissionLevel: PermissionLevel;
+  estimatedCost:   'free' | 'cheap' | 'moderate' | 'expensive';
+  dangerous?:      boolean;
+  requiresApproval?:boolean;
+}
+
+// ─── Tool implementation (internal) ──────────────────────────────────────────
+export interface ToolImplementation<TInput = Record<string, unknown>> {
+  definition: ToolDefinition;
+  inputSchema: ZodSchema<TInput>;
+  execute(
+    input:   TInput,
+    context: ToolContext
+  ): Promise<ToolResult>;
+}
+
+// ─── Context passed to every tool execution ──────────────────────────────────
+export interface ToolContext {
+  sessionId:  string;
+  project:    string;
+  workingDir: string;
+  approved:   boolean;
+  signal?:    AbortSignal;
+}
+
+// ─── Normalized tool result ───────────────────────────────────────────────────
+export interface ToolResult {
+  content:    string;
+  isError:    boolean;
+  durationMs: number;
+  metadata?:  Record<string, unknown>;
+}
+
+// ─── Tool call record (for history/audit) ────────────────────────────────────
+export interface ToolCallRecord {
+  id:        string;
+  name:      string;
+  toolUseId: string;
+  input:     Record<string, unknown>;
+  result:    string;
+  isError:   boolean;
+  durationMs:number;
+}
+packages/core/src/types/Provider.ts
+TypeScript
+
+import type { AgentMessage, SystemBlock, StreamEvent } from './Message.js';
+import type { ToolDefinition } from './Tool.js';
+
+// ─── Provider names ───────────────────────────────────────────────────────────
+export type ProviderName =
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'deepseek'
+  | 'bedrock'
+  | 'vertex'
+  | 'ollama'
+  | 'lmstudio';
+
+// ─── Config for a single provider ────────────────────────────────────────────
+export interface ProviderConfig {
+  name:         ProviderName;
+  model:        string;
+  apiKey?:      string;
+  baseUrl?:     string;
+  maxTokens?:   number;
+  temperature?: number;
+  topP?:        number;
+  timeout?:     number;
+  maxRetries?:  number;
+}
+
+// ─── Request to the provider ─────────────────────────────────────────────────
+export interface ProviderRequest {
+  system:   SystemBlock[];
+  messages: AgentMessage[];
+  tools?:   ToolDefinition[];
+  maxTokens?:  number;
+  temperature?:number;
+  signal?:  AbortSignal;
+}
+
+// ─── Response from the provider ──────────────────────────────────────────────
+export interface ProviderResponse {
+  content:          string;
+  inputTokens:      number;
+  outputTokens:     number;
+  cacheReadTokens:  number;
+  cacheWriteTokens: number;
+  stopReason:       'end_turn' | 'tool_use' | 'max_tokens' | 'stop_sequence';
+  toolUses?:        ProviderToolUse[];
+  rawResponse?:     unknown;
+}
+
+export interface ProviderToolUse {
+  id:    string;
+  name:  string;
+  input: Record<string, unknown>;
+}
+
+// ─── Abstract provider interface ─────────────────────────────────────────────
+export interface IProvider {
+  readonly name:  ProviderName;
+  readonly model: string;
+
+  complete(req: ProviderRequest): Promise<ProviderResponse>;
+  stream(
+    req:      ProviderRequest,
+    onEvent:  (event: StreamEvent) => void
+  ): Promise<ProviderResponse>;
+  countTokens(text: string): number;
+  isAvailable(): Promise<boolean>;
+}
+
+// ─── Cost estimation table (USD per 1M tokens) ───────────────────────────────
+export const PROVIDER_COSTS: Record<string, {
+  input: number;
+  output: number;
+  cacheRead?: number;
+  cacheWrite?: number;
+}> = {
+  'claude-opus-4-5':          { input: 15.00, output: 75.00, cacheRead: 1.50, cacheWrite: 18.75 },
+  'claude-sonnet-4-5':        { input: 3.00,  output: 15.00, cacheRead: 0.30, cacheWrite: 3.75  },
+  'claude-haiku-3-5':         { input: 0.80,  output: 4.00,  cacheRead: 0.08, cacheWrite: 1.00  },
+  'gpt-4o':                   { input: 5.00,  output: 15.00 },
+  'gpt-4o-mini':              { input: 0.15,  output: 0.60  },
+  'gpt-4-turbo':              { input: 10.00, output: 30.00 },
+  'deepseek-chat':            { input: 0.14,  output: 0.28  },
+  'deepseek-reasoner':        { input: 0.55,  output: 2.19  },
+  'gemini-1.5-pro':           { input: 1.25,  output: 5.00  },
+  'gemini-1.5-flash':         { input: 0.075, output: 0.30  },
+};
+
+export function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+  cacheReadTokens = 0,
+  cacheWriteTokens = 0,
+): number {
+  const costs = PROVIDER_COSTS[model];
+  if (!costs) return 0;
+  const inputCost       = (inputTokens / 1_000_000)       * costs.input;
+  const outputCost      = (outputTokens / 1_000_000)       * costs.output;
+  const cacheReadCost   = (cacheReadTokens / 1_000_000)    * (costs.cacheRead ?? 0);
+  const cacheWriteCost  = (cacheWriteTokens / 1_000_000)   * (costs.cacheWrite ?? 0);
+  return inputCost + outputCost + cacheReadCost + cacheWriteCost;
+}
+packages/core/src/types/Session.ts
+TypeScript
+
+import type { AgentMessage } from './Message.js';
+
+export type SessionStatus = 'active' | 'archived' | 'compacted';
+
+export interface SessionState {
+  sessionId:    string;
+  project:      string;
+  title?:       string;
+  status:       SessionStatus;
+  history:      AgentMessage[];
+  turnCount:    number;
+  inputTokens:  number;
+  outputTokens: number;
+  provider?:    string;
+  model?:       string;
+  createdAt:    string;
+  updatedAt:    string;
+}
+
+export interface AgentRunOptions {
+  sessionId?:       string;
+  prompt:           string;
+  project?:         string;
+  provider?:        string;
+  model?:           string;
+  maxTurns?:        number;
+  nonInteractive?:  boolean;
+  onEvent?:         (event: import('./Message.js').StreamEvent) => void;
+  signal?:          AbortSignal;
+}
+
+export interface AgentRunResult {
+  sessionId:    string;
+  response:     string;
+  inputTokens:  number;
+  outputTokens: number;
+  toolCalls:    import('./Tool.js').ToolCallRecord[];
+  turnCount:    number;
+}
+packages/core/src/types/Settings.ts
+TypeScript
+
+import type { PermissionLevel } from './Tool.js';
+import type { ProviderName } from './Provider.js';
+
+export interface ProviderSettings {
+  name:        ProviderName;
+  model:       string;
+  baseUrl?:    string;
+  maxTokens?:  number;
+  temperature?:number;
+}
+
+export interface PermissionSettings {
+  mode:            'default' | 'strict' | 'audit-only';
+  allowDangerous:  boolean;
+  sandboxEnabled:  boolean;
+  bashAllowedCmds: string[];
+  bashBlockedCmds: string[];
+  allowedDomains:  string[];
+  bashTimeoutSecs: number;
+}
+
+export interface MemorySettings {
+  maxIndexLines:    number;
+  embeddingModel:   string;
+  embeddingUrl:     string;
+  rrfK:             number;
+  autoDreamEnabled: boolean;
+  idleMinutes:      number;
+  maxTranscripts:   number;
+}
+
+export interface CompactionSettings {
+  threshold:           number;
+  reserveBuffer:       number;
+  maxFailures:         number;
+  microCompactMaxChars:number;
+}
+
+export interface CacheSettings {
+  enabled:     boolean;
+  staticTtl:   number;
+  breakStrict: boolean;
+  stickyLatch: boolean;
+}
+
+export interface KairosSettings {
+  enabled:          boolean;
+  tickIntervalSecs: number;
+  quietHoursStart:  number;
+  quietHoursEnd:    number;
+  logDir:           string;
+  webhookPort:      number;
+}
+
+export interface MCPServerConfig {
+  name:     string;
+  command:  string;
+  args?:    string[];
+  env?:     Record<string, string>;
+}
+
+export interface HookConfig {
+  event:     'PreToolUse' | 'PostToolUse' | 'Stop';
+  toolName?: string;
+  command:   string;
+}
+
+export interface CoworkSettings {
+  provider:    ProviderSettings;
+  fallback?:   ProviderSettings;
+  permissions: PermissionSettings;
+  memory:      MemorySettings;
+  compaction:  CompactionSettings;
+  cache:       CacheSettings;
+  kairos:      KairosSettings;
+  mcpServers:  MCPServerConfig[];
+  hooks:       HookConfig[];
+  telemetry:   boolean;
+  stateDir:    string;
+  logLevel:    'debug' | 'info' | 'warn' | 'error';
+}
+Step 5 — Settings Chain (5-Level Cascade)
+packages/core/src/state/defaults.ts
+TypeScript
+
+import type { CoworkSettings } from '../types/Settings.js';
+
+export const DEFAULT_SETTINGS: CoworkSettings = {
+  provider: {
+    name:        'anthropic',
+    model:       'claude-opus-4-5',
+    maxTokens:   8096,
+    temperature: 1.0,
+  },
+  permissions: {
+    mode:            'default',
+    allowDangerous:  false,
+    sandboxEnabled:  true,
+    bashAllowedCmds: [],
+    bashBlockedCmds: ['rm -rf', 'sudo', 'mkfs', 'dd', 'shutdown', 'reboot'],
+    allowedDomains:  [],
+    bashTimeoutSecs: 60,
+  },
+  memory: {
+    maxIndexLines:    200,
+    embeddingModel:   'nomic-embed-text',
+    embeddingUrl:     'http://localhost:11434',
+    rrfK:             60,
+    autoDreamEnabled: true,
+    idleMinutes:      30,
+    maxTranscripts:   7,
+  },
+  compaction: {
+    threshold:            0.85,
+    reserveBuffer:        4096,
+    maxFailures:          3,
+    microCompactMaxChars: 2000,
+  },
+  cache: {
+    enabled:     true,
+    staticTtl:   3600,
+    breakStrict: true,
+    stickyLatch: true,
+  },
+  kairos: {
+    enabled:          false,
+    tickIntervalSecs: 300,
+    quietHoursStart:  23,
+    quietHoursEnd:    7,
+    logDir:           '~/.cowork/logs',
+    webhookPort:      4242,
+  },
+  mcpServers: [],
+  hooks:      [],
+  telemetry:  false,
+  stateDir:   '~/.cowork',
+  logLevel:   'info',
+};
+packages/core/src/state/SettingsSchema.ts
+TypeScript
+
+import { z } from 'zod';
+
+const ProviderNameSchema = z.enum([
+  'anthropic', 'openai', 'gemini', 'deepseek',
+  'bedrock', 'vertex', 'ollama', 'lmstudio',
+]);
+
+const ProviderSettingsSchema = z.object({
+  name:        ProviderNameSchema,
+  model:       z.string().min(1),
+  baseUrl:     z.string().url().optional(),
+  maxTokens:   z.number().int().min(1).max(1_000_000).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+});
+
+const PermissionSettingsSchema = z.object({
+  mode:            z.enum(['default', 'strict', 'audit-only']),
+  allowDangerous:  z.boolean(),
+  sandboxEnabled:  z.boolean(),
+  bashAllowedCmds: z.array(z.string()),
+  bashBlockedCmds: z.array(z.string()),
+  allowedDomains:  z.array(z.string()),
+  bashTimeoutSecs: z.number().int().min(1).max(3600),
+});
+
+const MemorySettingsSchema = z.object({
+  maxIndexLines:    z.number().int().min(10).max(10_000),
+  embeddingModel:   z.string(),
+  embeddingUrl:     z.string().url(),
+  rrfK:             z.number().int().min(1),
+  autoDreamEnabled: z.boolean(),
+  idleMinutes:      z.number().int().min(1),
+  maxTranscripts:   z.number().int().min(1).max(365),
+});
+
+const CompactionSettingsSchema = z.object({
+  threshold:            z.number().min(0.1).max(0.99),
+  reserveBuffer:        z.number().int().min(512),
+  maxFailures:          z.number().int().min(1).max(10),
+  microCompactMaxChars: z.number().int().min(100),
+});
+
+const CacheSettingsSchema = z.object({
+  enabled:     z.boolean(),
+  staticTtl:   z.number().int().min(0),
+  breakStrict: z.boolean(),
+  stickyLatch: z.boolean(),
+});
+
+const KairosSettingsSchema = z.object({
+  enabled:          z.boolean(),
+  tickIntervalSecs: z.number().int().min(30),
+  quietHoursStart:  z.number().int().min(0).max(23),
+  quietHoursEnd:    z.number().int().min(0).max(23),
+  logDir:           z.string(),
+  webhookPort:      z.number().int().min(1024).max(65535),
+});
+
+const MCPServerConfigSchema = z.object({
+  name:    z.string().min(1),
+  command: z.string().min(1),
+  args:    z.array(z.string()).optional(),
+  env:     z.record(z.string()).optional(),
+});
+
+const HookConfigSchema = z.object({
+  event:    z.enum(['PreToolUse', 'PostToolUse', 'Stop']),
+  toolName: z.string().optional(),
+  command:  z.string().min(1),
+});
+
+export const CoworkSettingsSchema = z.object({
+  provider:    ProviderSettingsSchema,
+  fallback:    ProviderSettingsSchema.optional(),
+  permissions: PermissionSettingsSchema,
+  memory:      MemorySettingsSchema,
+  compaction:  CompactionSettingsSchema,
+  cache:       CacheSettingsSchema,
+  kairos:      KairosSettingsSchema,
+  mcpServers:  z.array(MCPServerConfigSchema),
+  hooks:       z.array(HookConfigSchema),
+  telemetry:   z.boolean(),
+  stateDir:    z.string(),
+  logLevel:    z.enum(['debug', 'info', 'warn', 'error']),
+});
+
+export type ValidatedSettings = z.infer<typeof CoworkSettingsSchema>;
+packages/core/src/state/SettingsChain.ts
+TypeScript
+
+import fs   from 'node:fs';
+import path from 'node:path';
+import os   from 'node:os';
+import { CoworkSettingsSchema } from './SettingsSchema.js';
+import { DEFAULT_SETTINGS }     from './defaults.js';
+import type { CoworkSettings }  from '../types/Settings.js';
+import { logger }               from '../utils/logger.js';
+
+// ─── 5-Level Cascade ──────────────────────────────────────────────────────────
+// Level 1: Built-in defaults    (DEFAULT_SETTINGS)
+// Level 2: User settings        (~/.cowork/settings.json)
+// Level 3: Project settings     (.cowork/settings.json in project root)
+// Level 4: CLAUDE.md directives (parsed from CLAUDE.md frontmatter)
+// Level 5: Environment vars     (process.env overrides)
+
+export class SettingsChain {
+  private static _instance: SettingsChain | null = null;
+  private _resolved: CoworkSettings | null = null;
+  private _projectRoot: string;
+
+  constructor(projectRoot: string = process.cwd()) {
+    this._projectRoot = projectRoot;
+  }
+
+  static getInstance(projectRoot?: string): SettingsChain {
+    if (!SettingsChain._instance) {
+      SettingsChain._instance = new SettingsChain(projectRoot);
+    }
+    return SettingsChain._instance;
+  }
+
+  static reset(): void {
+    SettingsChain._instance = null;
+  }
+
+  resolve(): CoworkSettings {
+    if (this._resolved) return this._resolved;
+
+    // Start with defaults
+    let merged = structuredClone(DEFAULT_SETTINGS);
+
+    // Level 2: User settings
+    merged = this._mergeUserSettings(merged);
+
+    // Level 3: Project settings
+    merged = this._mergeProjectSettings(merged);
+
+    // Level 4: CLAUDE.md directives
+    merged = this._mergeClaudeMdDirectives(merged);
+
+    // Level 5: Environment variables
+    merged = this._mergeEnvVars(merged);
+
+    // Validate final merged config
+    const result = CoworkSettingsSchema.safeParse(merged);
+    if (!result.success) {
+      logger.warn('Settings validation errors (using defaults for invalid fields):', {
+        errors: result.error.flatten(),
+      });
+      // Return merged anyway — caller sees warnings but continues
+    }
+
+    this._resolved = merged;
+    return merged;
+  }
+
+  invalidate(): void {
+    this._resolved = null;
+  }
+
+  // ─── Level 2: User settings ─────────────────────────────────────────────────
+  private _mergeUserSettings(base: CoworkSettings): CoworkSettings {
+    const stateDir    = this._resolveStateDir();
+    const settingsPath = path.join(stateDir, 'settings.json');
+
+    if (!fs.existsSync(settingsPath)) return base;
+
+    try {
+      const raw  = fs.readFileSync(settingsPath, 'utf-8');
+      const json = JSON.parse(raw) as Partial<CoworkSettings>;
+      return deepMerge(base, json);
+    } catch (err) {
+      logger.warn(`Failed to load user settings from ${settingsPath}:`, err);
+      return base;
+    }
+  }
+
+  // ─── Level 3: Project settings ──────────────────────────────────────────────
+  private _mergeProjectSettings(base: CoworkSettings): CoworkSettings {
+    const settingsPath = path.join(this._projectRoot, '.cowork', 'settings.json');
+
+    if (!fs.existsSync(settingsPath)) return base;
+
+    try {
+      const raw  = fs.readFileSync(settingsPath, 'utf-8');
+      const json = JSON.parse(raw) as Partial<CoworkSettings>;
+      return deepMerge(base, json);
+    } catch (err) {
+      logger.warn(`Failed to load project settings from ${settingsPath}:`, err);
+      return base;
+    }
+  }
+
+  // ─── Level 4: CLAUDE.md directives ──────────────────────────────────────────
+  private _mergeClaudeMdDirectives(base: CoworkSettings): CoworkSettings {
+    const claudeMdPath = path.join(this._projectRoot, 'CLAUDE.md');
+
+    if (!fs.existsSync(claudeMdPath)) return base;
+
+    try {
+      const content    = fs.readFileSync(claudeMdPath, 'utf-8');
+      const directives = this._parseClaudeMdFrontmatter(content);
+      if (!directives) return base;
+      return deepMerge(base, directives);
+    } catch (err) {
+      logger.warn(`Failed to parse CLAUDE.md directives:`, err);
+      return base;
+    }
+  }
+
+  // Parse YAML-like frontmatter block from CLAUDE.md
+  // Format: lines starting with <!-- cowork: {...} --> in the first comment block
+  private _parseClaudeMdFrontmatter(
+    content: string
+  ): Partial<CoworkSettings> | null {
+    const match = content.match(/<!--\s*cowork:\s*(\{[\s\S]*?\})\s*-->/m);
+    if (!match?.[1]) return null;
+    try {
+      return JSON.parse(match[1]) as Partial<CoworkSettings>;
+    } catch {
+      return null;
+    }
+  }
+
+  // ─── Level 5: Environment variables ─────────────────────────────────────────
+  private _mergeEnvVars(base: CoworkSettings): CoworkSettings {
+    const merged = structuredClone(base);
+    const env    = process.env;
+
+    // Provider
+    if (env['DEFAULT_PROVIDER'])
+      merged.provider.name = env['DEFAULT_PROVIDER'] as CoworkSettings['provider']['name'];
+    if (env['DEFAULT_MODEL'])
+      merged.provider.model = env['DEFAULT_MODEL'];
+    if (env['OLLAMA_BASE_URL'] && merged.provider.name === 'ollama')
+      merged.provider.baseUrl = env['OLLAMA_BASE_URL'];
+    if (env['LMSTUDIO_BASE_URL'] && merged.provider.name === 'lmstudio')
+      merged.provider.baseUrl = env['LMSTUDIO_BASE_URL'];
+
+    // Core
+    if (env['COWORK_STATE_DIR'])
+      merged.stateDir = env['COWORK_STATE_DIR'];
+    if (env['COWORK_LOG_LEVEL'])
+      merged.logLevel = env['COWORK_LOG_LEVEL'] as CoworkSettings['logLevel'];
+    if (env['COWORK_TELEMETRY'])
+      merged.telemetry = env['COWORK_TELEMETRY'] === 'true';
+
+    // Permissions
+    if (env['PERMISSION_MODE'])
+      merged.permissions.mode = env['PERMISSION_MODE'] as CoworkSettings['permissions']['mode'];
+    if (env['ALLOW_DANGEROUS_TOOLS'])
+      merged.permissions.allowDangerous = env['ALLOW_DANGEROUS_TOOLS'] === 'true';
+    if (env['SANDBOX_ENABLED'])
+      merged.permissions.sandboxEnabled = env['SANDBOX_ENABLED'] !== 'false';
+    if (env['BASH_ALLOWED_COMMANDS'] && env['BASH_ALLOWED_COMMANDS'].length > 0)
+      merged.permissions.bashAllowedCmds = env['BASH_ALLOWED_COMMANDS'].split(',').map(s => s.trim());
+    if (env['BASH_BLOCKED_COMMANDS'])
+      merged.permissions.bashBlockedCmds = env['BASH_BLOCKED_COMMANDS'].split(',').map(s => s.trim());
+    if (env['BASH_TIMEOUT_SECONDS'])
+      merged.permissions.bashTimeoutSecs = parseInt(env['BASH_TIMEOUT_SECONDS'], 10);
+    if (env['ALLOWED_DOMAINS'] && env['ALLOWED_DOMAINS'].length > 0)
+      merged.permissions.allowedDomains = env['ALLOWED_DOMAINS'].split(',').map(s => s.trim());
+
+    // Compaction
+    if (env['COMPACT_THRESHOLD'])
+      merged.compaction.threshold = parseFloat(env['COMPACT_THRESHOLD']);
+    if (env['COMPACT_RESERVE_BUFFER'])
+      merged.compaction.reserveBuffer = parseInt(env['COMPACT_RESERVE_BUFFER'], 10);
+    if (env['COMPACT_MAX_FAILURES'])
+      merged.compaction.maxFailures = parseInt(env['COMPACT_MAX_FAILURES'], 10);
+
+    // Memory
+    if (env['MEMORY_MAX_INDEX_LINES'])
+      merged.memory.maxIndexLines = parseInt(env['MEMORY_MAX_INDEX_LINES'], 10);
+    if (env['MEMORY_EMBEDDING_MODEL'])
+      merged.memory.embeddingModel = env['MEMORY_EMBEDDING_MODEL'];
+    if (env['MEMORY_EMBEDDING_URL'])
+      merged.memory.embeddingUrl = env['MEMORY_EMBEDDING_URL'];
+    if (env['AUTODREAM_ENABLED'])
+      merged.memory.autoDreamEnabled = env['AUTODREAM_ENABLED'] !== 'false';
+
+    // Cache
+    if (env['CACHE_ENABLED'])
+      merged.cache.enabled = env['CACHE_ENABLED'] !== 'false';
+    if (env['CACHE_STICKY_LATCH'])
+      merged.cache.stickyLatch = env['CACHE_STICKY_LATCH'] !== 'false';
+
+    // Kairos
+    if (env['KAIROS_ENABLED'])
+      merged.kairos.enabled = env['KAIROS_ENABLED'] === 'true';
+    if (env['KAIROS_TICK_INTERVAL_SECONDS'])
+      merged.kairos.tickIntervalSecs = parseInt(env['KAIROS_TICK_INTERVAL_SECONDS'], 10);
+
+    return merged;
+  }
+
+  private _resolveStateDir(): string {
+    const raw = process.env['COWORK_STATE_DIR'] ?? DEFAULT_SETTINGS.stateDir;
+    return raw.startsWith('~')
+      ? path.join(os.homedir(), raw.slice(1))
+      : raw;
+  }
+}
+
+// ─── Deep merge utility ───────────────────────────────────────────────────────
+function deepMerge<T extends object>(base: T, override: Partial<T>): T {
+  const result = { ...base };
+
+  for (const key in override) {
+    if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
+    const overrideVal = override[key];
+    const baseVal     = base[key];
+
+    if (
+      overrideVal !== null &&
+      typeof overrideVal === 'object' &&
+      !Array.isArray(overrideVal) &&
+      baseVal !== null &&
+      typeof baseVal === 'object' &&
+      !Array.isArray(baseVal)
+    ) {
+      (result as Record<string, unknown>)[key] = deepMerge(
+        baseVal as object,
+        overrideVal as Partial<object>
+      );
+    } else if (overrideVal !== undefined) {
+      (result as Record<string, unknown>)[key] = overrideVal;
+    }
+  }
+
+  return result;
+}
+Step 6 — Utilities
+packages/core/src/utils/logger.ts
+TypeScript
+
+import winston from 'winston';
+import path    from 'node:path';
+import os      from 'node:os';
+import fs      from 'node:fs';
+
+const { combine, timestamp, printf, colorize, json, errors } = winston.format;
+
+// ─── Determine log level ──────────────────────────────────────────────────────
+const LOG_LEVEL = process.env['COWORK_LOG_LEVEL'] ?? 'info';
+const VERBOSE   = process.env['COWORK_VERBOSE']   === 'true';
+
+// ─── Log file path ───────────────────────────────────────────────────────────
+function getLogPath(): string {
+  const stateDir = (process.env['COWORK_STATE_DIR'] ?? '~/.cowork')
+    .replace(/^~/, os.homedir());
+  const logsDir = path.join(stateDir, 'logs');
+  fs.mkdirSync(logsDir, { recursive: true });
+  const date = new Date().toISOString().split('T')[0];
+  return path.join(logsDir, `cowork-${date}.log`);
+}
+
+// ─── Console format ───────────────────────────────────────────────────────────
+const consoleFormat = printf(({ level, message, timestamp: ts, ...meta }) => {
+  const metaStr = Object.keys(meta).length > 0
+    ? '\n' + JSON.stringify(meta, null, 2)
+    : '';
+  return `${String(ts)} [${String(level)}] ${String(message)}${metaStr}`;
+});
+
+// ─── Create logger ────────────────────────────────────────────────────────────
+export const logger = winston.createLogger({
+  level:       LOG_LEVEL,
+  exitOnError: false,
+  format: combine(
+    errors({ stack: true }),
+    timestamp({ format: 'HH:mm:ss.SSS' }),
+  ),
+  transports: [
+    // Console transport
+    new winston.transports.Console({
+      silent: process.env['NODE_ENV'] === 'test',
+      format: combine(
+        colorize({ all: true }),
+        consoleFormat,
+      ),
+    }),
+
+    // File transport (structured JSON)
+    new winston.transports.File({
+      filename: getLogPath(),
+      format:   combine(timestamp(), json()),
+      maxsize:  10 * 1024 * 1024, // 10MB
+      maxFiles: 7,
+    }),
+  ],
+});
+
+// ─── Agent-specific log helpers ───────────────────────────────────────────────
+export const agentLogger = {
+  toolCall(toolName: string, input: unknown): void {
+    logger.debug(`→ TOOL: ${toolName}`, { input });
+  },
+  toolResult(toolName: string, result: string, isError: boolean): void {
+    if (isError) {
+      logger.warn(`← TOOL ERROR: ${toolName}`, { result: result.slice(0, 200) });
+    } else {
+      logger.debug(`← TOOL OK: ${toolName}`, { result: result.slice(0, 200) });
+    }
+  },
+  turn(turnIndex: number, tokens: number): void {
+    logger.info(`Turn ${turnIndex} complete`, { tokens });
+  },
+  sessionStart(sessionId: string, project: string): void {
+    logger.info(`Session started`, { sessionId, project });
+  },
+  sessionEnd(sessionId: string, totalTokens: number): void {
+    logger.info(`Session ended`, { sessionId, totalTokens });
+  },
+};
+packages/core/src/utils/retry.ts
+TypeScript
+
+import pRetry, { type Options as PRetryOptions } from 'p-retry';
+import pTimeout                                   from 'p-timeout';
+import { logger }                                 from './logger.js';
+
+export interface RetryOptions {
+  maxRetries?:   number;
+  minTimeout?:   number;
+  maxTimeout?:   number;
+  timeout?:      number;
+  onRetry?:      (error: Error, attempt: number) => void;
+  shouldRetry?:  (error: Error) => boolean;
+}
+
+// ─── Default retry predicate (retryable HTTP/API errors) ─────────────────────
+function defaultShouldRetry(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  const isRateLimit   = message.includes('rate limit') || message.includes('429');
+  const isOverload    = message.includes('overloaded')  || message.includes('503');
+  const isTimeout     = message.includes('timeout')     || message.includes('timedout');
+  const isNetwork     = message.includes('econnrefused')|| message.includes('enotfound');
+  const isServerError = message.includes('500')         || message.includes('internal server');
+  return isRateLimit || isOverload || isTimeout || isNetwork || isServerError;
+}
+
+// ─── Retry with exponential backoff ─────────────────────────────────────────
+export async function withRetry<T>(
+  fn:      () => Promise<T>,
+  options: RetryOptions = {}
+): Promise<T> {
+  const {
+    maxRetries  = parseInt(process.env['PROVIDER_MAX_RETRIES'] ?? '3', 10),
+    minTimeout  = 1_000,
+    maxTimeout  = 30_000,
+    timeout     = parseInt(process.env['PROVIDER_TIMEOUT_MS'] ?? '30000', 10),
+    onRetry,
+    shouldRetry = defaultShouldRetry,
+  } = options;
+
+  const retryOptions: PRetryOptions = {
+    retries:    maxRetries,
+    minTimeout,
+    maxTimeout,
+    randomize:  true,
+    factor:     2,
+    onFailedAttempt: (error) => {
+      if (!shouldRetry(error)) {
+        throw error; // abort retries
+      }
+      const msg = `Attempt ${error.attemptNumber}/${maxRetries + 1} failed: ${error.message}`;
+      logger.warn(msg, { retriesLeft: error.retriesLeft });
+      onRetry?.(error, error.attemptNumber);
+    },
+  };
+
+  const withTimeoutFn = () =>
+    pTimeout(fn(), {
+      milliseconds: timeout,
+      message: `Operation timed out after ${timeout}ms`,
+    });
+
+  return pRetry(withTimeoutFn, retryOptions);
+}
+
+// ─── Delay utility ───────────────────────────────────────────────────────────
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// ─── Exponential backoff for rate limits ────────────────────────────────────
+export async function backoffDelay(attempt: number): Promise<void> {
+  const base    = 1_000;
+  const jitter  = Math.random() * 1_000;
+  const ms      = Math.min(base * Math.pow(2, attempt) + jitter, 30_000);
+  await delay(ms);
+}
+packages/core/src/utils/tokenCounter.ts
+TypeScript
+
+import { get_encoding, type Tiktoken } from 'tiktoken';
+import { logger }                      from './logger.js';
+
+// ─── Encoder cache ────────────────────────────────────────────────────────────
+const encoders = new Map<string, Tiktoken>();
+
+function getEncoder(model: string): Tiktoken {
+  // Map model names to tiktoken encoding names
+  const encoding = getEncodingName(model);
+
+  if (!encoders.has(encoding)) {
+    try {
+      encoders.set(encoding, get_encoding(encoding as Parameters<typeof get_encoding>[0]));
+    } catch {
+      logger.warn(`Unknown encoding for model ${model}, falling back to cl100k_base`);
+      if (!encoders.has('cl100k_base')) {
+        encoders.set('cl100k_base', get_encoding('cl100k_base'));
+      }
+      return encoders.get('cl100k_base')!;
+    }
+  }
+
+  return encoders.get(encoding)!;
+}
+
+function getEncodingName(model: string): string {
+  if (model.includes('claude'))  return 'cl100k_base';  // approximate
+  if (model.includes('gpt-4'))   return 'cl100k_base';
+  if (model.includes('gpt-3.5')) return 'cl100k_base';
+  if (model.includes('o1'))      return 'o200k_base';
+  if (model.includes('o3'))      return 'o200k_base';
+  return 'cl100k_base';
+}
+
+// ─── Count tokens for a string ───────────────────────────────────────────────
+export function countTokens(text: string, model = 'gpt-4'): number {
+  try {
+    const encoder = getEncoder(model);
+    return encoder.encode(text).length;
+  } catch (err) {
+    logger.warn('Token counting failed, using estimate:', err);
+    return estimateTokens(text);
+  }
+}
+
+// ─── Rough estimate (4 chars ≈ 1 token) ──────────────────────────────────────
+export function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+// ─── Count tokens for a message array ────────────────────────────────────────
+export function countMessageTokens(
+  messages: Array<{ role: string; content: unknown }>,
+  model = 'gpt-4'
+): number {
+  let total = 0;
+
+  for (const msg of messages) {
+    // Per-message overhead (varies by model)
+    total += 4;
+
+    if (typeof msg.content === 'string') {
+      total += countTokens(msg.content, model);
+    } else if (Array.isArray(msg.content)) {
+      for (const block of msg.content as Array<{ type: string; text?: string; input?: unknown }>) {
+        if (block.type === 'text' && block.text) {
+          total += countTokens(block.text, model);
+        } else if (block.type === 'tool_use' && block.input) {
+          total += countTokens(JSON.stringify(block.input), model);
+        }
+      }
+    }
+
+    total += countTokens(msg.role, model);
+  }
+
+  total += 2; // Reply priming
+  return total;
+}
+
+// ─── Cleanup encoders on process exit ────────────────────────────────────────
+process.on('exit', () => {
+  for (const encoder of encoders.values()) {
+    encoder.free();
+  }
+});
+packages/core/src/utils/idGenerator.ts
+TypeScript
+
+import { nanoid, customAlphabet } from 'nanoid';
+
+// ─── Standard IDs ────────────────────────────────────────────────────────────
+export const generateId = () => nanoid(21);
+
+// ─── Prefixed IDs (for readability in logs/DB) ───────────────────────────────
+const prefixedId = customAlphabet('0123456789abcdefghijklmnopqrstuvwxyz', 16);
+
+export const generateSessionId  = () => `sess_${prefixedId()}`;
+export const generateMessageId  = () => `msg_${prefixedId()}`;
+export const generateMemoryId   = () => `mem_${prefixedId()}`;
+export const generateToolCallId = () => `tc_${prefixedId()}`;
+export const generateUsageId    = () => `usage_${prefixedId()}`;
+export const generateAuditId    = () => `audit_${prefixedId()}`;
+export const generateHookId     = () => `hook_${prefixedId()}`;
+
+// ─── Tool use IDs (mirrors Anthropic's toolu_ prefix) ────────────────────────
+export const generateToolUseId  = () => `toolu_${prefixedId()}`;
+packages/core/src/utils/stateDir.ts
+TypeScript
+
+import path from 'node:path';
+import os   from 'node:fs';
+import osm  from 'node:os';
+import fs   from 'node:fs';
+
+export function resolveStateDir(): string {
+  const raw = process.env['COWORK_STATE_DIR'] ?? '~/.cowork';
+  return raw.startsWith('~')
+    ? path.join(osm.homedir(), raw.slice(1))
+    : raw;
+}
+
+export function resolveProjectDir(project: string): string {
+  return path.join(resolveStateDir(), 'projects', project);
+}
+
+export function resolveTranscriptsDir(): string {
+  return path.join(resolveStateDir(), 'transcripts');
+}
+
+export function resolveLogsDir(): string {
+  return path.join(resolveStateDir(), 'logs');
+}
+
+export function ensureStateDirs(project: string): void {
+  const dirs = [
+    resolveStateDir(),
+    resolveProjectDir(project),
+    path.join(resolveProjectDir(project), 'memory'),
+    path.join(resolveProjectDir(project), 'sessions'),
+    resolveTranscriptsDir(),
+    resolveLogsDir(),
+  ];
+  for (const dir of dirs) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+Step 7 — System Prompts
+packages/core/src/prompts/systemPrompts.ts
+TypeScript
+
+import type { SystemBlock }   from '../types/Message.js';
+import type { CoworkSettings } from '../types/Settings.js';
+import fs                      from 'node:fs';
+import path                    from 'node:path';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STATIC SYSTEM PROMPT (cached — never include dynamic content here)
+// This block sits at the top of every session and is prompt-cache eligible.
+// ─────────────────────────────────────────────────────────────────────────────
+export const STATIC_SYSTEM_PROMPT = `\
+You are Locoworker — an expert software engineer, researcher, and AI coworker \
+running locally on the user's machine. You have access to a comprehensive set of \
+tools that let you read and write files, execute shell commands, search the web, \
+manage persistent memory, query a knowledge graph, and more.
+
+## Core Identity & Operating Principles
+
+You are precise, capable, and deeply technical. You think carefully before acting, \
+favor minimal targeted changes over broad rewrites, and always explain your \
+reasoning when making non-obvious decisions. You are persistent — you do not give \
+up when faced with ambiguity or errors. Instead, you debug systematically and \
+adapt.
+
+## How You Work
+
+1. **Think before acting.** Analyze the user's request thoroughly. Identify \
+   the minimal set of actions required.
+
+2. **Use tools deliberately.** Every tool call has a cost (time, tokens, \
+   permissions). Use the most targeted tool available. Prefer reading before \
+   writing. Prefer grep/glob over reading entire files.
+
+3. **Verify your work.** After making changes, verify them. Run tests. \
+   Check outputs. Do not assume success — confirm it.
+
+4. **Communicate clearly.** Tell the user what you are doing and why, \
+   especially before taking irreversible actions. Ask for clarification \
+   when requirements are ambiguous, but do not ask unnecessary questions.
+
+5. **Respect permissions.** You operate under a strict permission system. \
+   Never attempt to bypass permission gates. If a dangerous operation is \
+   required, explain why and request explicit approval.
+
+6. **Manage context.** Sessions have token limits. Summarize long tool \
+   outputs. Avoid repeating information already in context. Use memory \
+   tools to persist important information across sessions.
+
+## Tool Use Philosophy
+
+- **Bash:** Use for build, test, lint, and process commands. Never use for \
+  file reading (use ReadFile instead). Never run interactive commands. \
+  Always set appropriate timeouts.
+
+- **File tools:** Read before editing. Use EditFile for surgical changes, \
+  WriteFile only for new files or full rewrites. Always verify edits.
+
+- **Web tools:** Fetch only what you need. Summarize fetched content — \
+  do not dump raw HTML into context.
+
+- **Memory tools:** Save important discoveries, decisions, and patterns. \
+  Search memory before rediscovering information you may have already found.
+
+- **Agent tools:** Spawn subagents for truly parallelizable work. Always \
+  collect and verify their results.
+
+## Code Quality Standards
+
+- Write clean, typed, well-documented code
+- Follow existing project conventions (check for .eslintrc, tsconfig, etc.)
+- Write or update tests for significant changes
+- Use the project's existing libraries — do not add unnecessary dependencies
+- Handle errors explicitly — never silently swallow exceptions
+
+## Security Principles
+
+- Never include secrets, API keys, or credentials in files you write
+- Never disable security checks or sandbox restrictions
+- Report suspicious patterns in code you are asked to work with
+- Be especially careful with: eval(), exec(), child_process, network calls, \
+  file system operations outside the project root
+
+## Response Format
+
+- Use markdown formatting for code blocks, file paths, and structured output
+- Keep prose concise — prefer bullet points over long paragraphs for status updates
+- When a task is complete, give a clear summary of what was done
+- When a task fails, explain exactly what went wrong and what was tried
+`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PERMISSION MODE ADDENDUM (injected based on settings, also cache-eligible)
+// ─────────────────────────────────────────────────────────────────────────────
+export const PERMISSION_MODE_PROMPTS: Record<
+  CoworkSettings['permissions']['mode'],
+  string
+> = {
+  default: `\
+## Permission Mode: Default
+You operate under standard permissions. Dangerous operations (destructive bash \
+commands, writing outside the project root, network requests to non-allowlisted \
+domains) require explicit user approval before execution. Always ask before \
+taking irreversible actions.`,
+
+  strict: `\
+## Permission Mode: Strict
+You are operating in STRICT permission mode. This means:
+- All bash commands require explicit user approval before execution
+- No network requests are permitted without explicit approval
+- File writes are limited to the current project directory
+- You MUST describe any action before taking it and wait for confirmation
+- When in doubt, DO NOT act — ask first`,
+
+  'audit-only': `\
+## Permission Mode: Audit Only
+You are operating in AUDIT-ONLY mode. This means:
+- You MAY read files and search, but CANNOT execute bash commands
+- You CANNOT write or modify files
+- You CANNOT make network requests
+- Your role is to analyze, plan, and advise — not to execute
+- Describe exactly what you WOULD do if given permission`,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROJECT CONTEXT BLOCK (per-project, cache-eligible if project doesn't change)
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildProjectBlock(
+  project:     string,
+  claudeMdPath: string | null,
+  memoryIndex: string | null,
+  graphReport: string | null,
+): string {
+  const parts: string[] = [`## Project: ${project}`];
+
+  // CLAUDE.md content
+  if (claudeMdPath && fs.existsSync(claudeMdPath)) {
+    try {
+      const content = fs.readFileSync(claudeMdPath, 'utf-8');
+      parts.push(`### CLAUDE.md — Project Instructions\n${content}`);
+    } catch {
+      // silently skip if unreadable
+    }
+  }
+
+  // Memory index
+  if (memoryIndex && memoryIndex.trim().length > 0) {
+    parts.push(`### Memory Index\n${memoryIndex}`);
+  }
+
+  // Graph report
+  if (graphReport && graphReport.trim().length > 0) {
+    parts.push(`### Knowledge Graph Summary\n${graphReport}`);
+  }
+
+  return parts.join('\n\n');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DYNAMIC BLOCK (per-turn, never cached)
+// Keep this as SMALL as possible to maximise cache hit rate.
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildDynamicBlock(context: {
+  project:     string;
+  workingDir:  string;
+  provider:    string;
+  model:       string;
+  turnCount:   number;
+  sessionId:   string;
+}): string {
+  return `\
+## Current Session Context
+- Session ID: ${context.sessionId}
+- Project: ${context.project}
+- Working directory: ${context.workingDir}
+- Provider/Model: ${context.provider}/${context.model}
+- Turn: ${context.turnCount}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ASSEMBLE FULL SYSTEM PROMPT (3 blocks: static / project / dynamic)
+// ─────────────────────────────────────────────────────────────────────────────
+export function buildSystemPrompt(params: {
+  permissionMode: CoworkSettings['permissions']['mode'];
+  project:        string;
+  claudeMdPath:   string | null;
+  memoryIndex:    string | null;
+  graphReport:    string | null;
+  workingDir:     string;
+  provider:       string;
+  model:          string;
+  turnCount:      number;
+  sessionId:      string;
+  cacheEnabled:   boolean;
+}): SystemBlock[] {
+  const {
+    permissionMode, project, claudeMdPath, memoryIndex,
+    graphReport, workingDir, provider, model,
+    turnCount, sessionId, cacheEnabled,
+  } = params;
+
+  // Block 1: Static (identity, principles, tool philosophy) — always cached
+  const staticBlock: SystemBlock = {
+    type: 'text',
+    text: STATIC_SYSTEM_PROMPT + '\n\n' + PERMISSION_MODE_PROMPTS[permissionMode],
+    ...(cacheEnabled ? { cacheControl: { type: 'ephemeral' } } : {}),
+  };
+
+  // Block 2: Project (CLAUDE.md + memory + graph) — cached per project
+  const projectText = buildProjectBlock(
+    project, claudeMdPath, memoryIndex, graphReport
+  );
+  const projectBlock: SystemBlock = {
+    type: 'text',
+    text: projectText,
+    ...(cacheEnabled ? { cacheControl: { type: 'ephemeral' } } : {}),
+  };
+
+  // Block 3: Dynamic (session/turn context) — NEVER cached
+  const dynamicBlock: SystemBlock = {
+    type: 'text',
+    text: buildDynamicBlock({
+      project, workingDir, provider, model, turnCount, sessionId
+    }),
+  };
+
+  return [staticBlock, projectBlock, dynamicBlock];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL-SPECIFIC PROMPTS
+// ─────────────────────────────────────────────────────────────────────────────
+export const TOOL_PROMPTS = {
+  memorySearch: `Before searching files or the web, first search your memory \
+for relevant past discoveries. Use memory_search with descriptive queries.`,
+
+  graphConsult: `Before grepping or globbing, check the knowledge graph \
+(if available) for structural context about the codebase.`,
+
+  bashConfirm: `Before running any bash command that modifies state \
+(installs packages, modifies files, starts processes), confirm with the user \
+unless you have explicit permission to proceed autonomously.`,
+
+  fileEdit: `When editing files, use EditFile for surgical changes (specific \
+lines/sections). Only use WriteFile when creating new files or when a \
+complete rewrite is explicitly needed.`,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// COMPACTION PROMPT (used when context needs summarizing)
+// ─────────────────────────────────────────────────────────────────────────────
+export const COMPACTION_PROMPT = `\
+The conversation context is approaching the token limit. Please create a \
+comprehensive summary of everything that has happened in this session so far. \
+Include:
+
+1. **Original Task**: What the user asked for originally
+2. **Work Completed**: What has been done, with specific files/functions modified
+3. **Current 
