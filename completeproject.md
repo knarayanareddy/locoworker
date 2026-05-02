@@ -6853,3 +6853,5250 @@ Include:
 1. **Original Task**: What the user asked for originally
 2. **Work Completed**: What has been done, with specific files/functions modified
 3. **Current 
+
+
+
+
+
+A Continuation of completeproject.md — Same Theme, Same Build
+How to use this document: This addendum is a direct continuation of completeproject.md. Each section below maps to a missing primitive or architectural correction. All TypeScript interfaces, directory paths, config schemas, and event contracts follow the same conventions as the base document. When building, treat this addendum as equal weight to the original spec — not optional enhancements.
+
+SECTION A — Harness Philosophy
+A.1 The Core Principle
+Before any code is written, every engineering and product decision in Locoworker must be tested against one question:
+
+"Does this feature expose the model's power — or does it wrap and limit it?"
+
+This is not a vague principle. It is a binary architectural filter. Features that wrap the model — that interpret, pre-process, constrain, or second-guess what the model would naturally do — must be eliminated or made opt-in. Features that expose the model — that give it better tools, better context, better permissions, and better feedback loops — must be prioritized.
+
+The dominant failure mode of AI developer tools is not "too few features." It is too much scaffolding that prevents the model from doing what it already can do. A clean harness that gets out of the way will outperform a feature-rich wrapper in every real-world task.
+
+A.2 What "Minimal Scaffolding" Means in Practice
+Minimal scaffolding does not mean a minimal product. It means:
+
+What It IS	What It Is NOT
+Clean tool interfaces with precise schemas	Wizard-style UIs that pre-fill model decisions
+Streaming raw model output to the user	Summarizing or reformatting model responses
+Delegating formatting decisions to the model	Imposing markdown renderers that constrain output
+Letting the model decide when to use a tool	Heuristic pre-routing before the model sees the prompt
+Exposing full tool results to the model	Truncating tool output before the model reads it (except for hard budget limits)
+Asking the user once for permission, then trusting	Asking repeatedly for the same class of action
+A.3 The "Delete When Model Improves" Rule
+Every piece of compensatory logic in the harness must carry a // MODEL_COMPENSATION: comment tag. This is a first-class code annotation, not an optional comment style.
+
+TypeScript
+
+// MODEL_COMPENSATION: Llama-3.1 sometimes omits closing braces in tool call JSON.
+// Re-evaluate when Llama-3.2+ is the minimum supported local model.
+function repairToolCallJson(raw: string): string {
+  // ...repair logic
+}
+The build pipeline must include a quarterly audit task: review all MODEL_COMPENSATION tags and determine whether the underlying model limitation still exists. If not, delete the code. This keeps the harness lean as models improve.
+
+A.4 Feature Classification System
+Every feature in the product backlog must be tagged with one of three classifications before it is implemented:
+
+text
+
+[EXPOSE]   — Directly increases what the model can do or see.
+             Examples: new tool, larger context window, better memory injection.
+
+[SURFACE]  — Presents model output or state to the user without interpreting it.
+             Examples: streaming chat, activity log, file diff viewer.
+
+[SCAFFOLD] — Adds logic between user intent and model action.
+             Examples: wizard, pre-routing, heuristic summarization.
+[EXPOSE] and [SURFACE] features are always prioritized. [SCAFFOLD] features require explicit justification and must be opt-in by default. Any [SCAFFOLD] feature that cannot be justified gets cut.
+
+A.5 Philosophy Applied to This Build's Scope
+Applying this filter to the full completeproject.md scope:
+
+Feature	Classification	Decision
+Tool registry + schemas	EXPOSE	✅ Core — build first
+Permission gate	EXPOSE	✅ Core — enables trust
+Memory injection / CLAUDE.md	EXPOSE	✅ Core — improves context
+Knowledge graph report	EXPOSE	✅ Improves navigation
+LLMWiki ingest	EXPOSE	✅ Improves context
+Streaming chat UI	SURFACE	✅ Core
+File diff / preview panel	SURFACE	✅ Core
+Activity log	SURFACE	✅ Core
+Provider router	EXPOSE	✅ Core
+Multi-agent coordinator	EXPOSE	✅ Phase 2
+Skills / routines	EXPOSE	✅ Phase 2
+Hooks registry	EXPOSE	✅ Phase 2
+Simulation panel	SCAFFOLD	⚠️ Defer to Phase 3+
+Council / deliberation	SCAFFOLD	⚠️ Defer to Phase 3+
+"AutoDream" consolidation	SCAFFOLD	⚠️ Make opt-in
+Messaging gateway	SURFACE	🔵 Phase 2, opt-in module
+A.6 Harness Architecture Diagram
+text
+
+┌─────────────────────────────────────────────────────────────────┐
+│                        USER / SURFACE LAYER                     │
+│          Desktop UI  │  Terminal UI  │  Gateway  │  VS Code     │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │  raw events (streaming)
+┌──────────────────────────────▼──────────────────────────────────┐
+│                     HARNESS (thin layer)                        │
+│   Session Mgmt │ Context Assembly │ Permission Gate │ Compaction │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │  messages + tool results
+┌──────────────────────────────▼──────────────────────────────────┐
+│                        MODEL LAYER                              │
+│        Anthropic  │  OpenAI  │  Ollama  │  LM Studio           │
+└──────────────────────────────┬──────────────────────────────────┘
+                               │  tool_use blocks
+┌──────────────────────────────▼──────────────────────────────────┐
+│                       TOOL EXECUTION LAYER                      │
+│  Files │ Bash │ Web │ Memory │ MCP │ Git │ Wiki │ Graph        │
+└─────────────────────────────────────────────────────────────────┘
+The harness is the thinnest possible layer between the user and the model, and between the model and the tools. It exists only to manage state, enforce safety, and route I/O. It does not interpret, summarize, or decide.
+
+SECTION B — ToolCallReliabilityLayer
+B.1 Why This Exists
+Local models (Llama, Mistral, Qwen, Phi, Gemma) vary enormously in tool-calling reliability:
+
+Model Class	Tool Call Reliability	Common Failure Mode
+Claude (API)	~99%	Virtually none
+GPT-4o (API)	~97%	Occasional extra whitespace
+Llama 3.1 70B+	~85%	Missing closing braces, wrong field names
+Llama 3.1 8B	~65%	Frequent malformed JSON, missed tool triggers
+Mistral 7B	~55%	Often returns prose instead of tool call
+Phi-3 mini	~40%	Regularly ignores tool definitions
+Without a reliability layer, a local-model-powered harness will silently fail on ~15–60% of tool calls depending on model size. The user sees the model "talking about" doing something instead of doing it, with no error, no feedback, and no recovery path.
+
+The ToolCallReliabilityLayer sits between the raw model response and the tool executor and silently handles these failures, escalating only when recovery is impossible.
+
+B.2 Layer Architecture
+text
+
+┌──────────────────────────────────────────────────────────────────┐
+│                   ToolCallReliabilityLayer                       │
+│                                                                  │
+│  Raw Model Output                                                │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐  │
+│  │  Detection  │───▶│    Repair    │───▶│   Validation       │  │
+│  │  Engine     │    │   Engine     │    │   Engine           │  │
+│  └─────────────┘    └──────────────┘    └────────────────────┘  │
+│       │                    │                     │              │
+│  ┌────▼──────────────────────────────────────────▼───────────┐  │
+│  │              Structured Output Enforcer                    │  │
+│  │         (grammar-constrained generation fallback)          │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                             │                                    │
+│  ┌──────────────────────────▼───────────────────────────────┐   │
+│  │              Graceful Degradation Controller              │   │
+│  └───────────────────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────┘
+B.3 TypeScript Interface Definitions
+TypeScript
+
+// packages/core/src/reliability/types.ts
+
+export type ToolCallFailureMode =
+  | 'malformed_json'           // JSON parse error
+  | 'missing_required_field'   // Schema validation fail
+  | 'wrong_tool_name'          // Tool not in registry
+  | 'type_mismatch'            // Field value wrong type
+  | 'extra_prose'              // Tool call embedded in prose
+  | 'no_tool_call'             // Model returned text when tool expected
+  | 'truncated_output'         // Response cut off mid-JSON
+  | 'double_encoded'           // JSON string inside JSON string
+
+export interface ToolCallDiagnosis {
+  raw: string
+  failureMode: ToolCallFailureMode | null
+  repairAttempted: boolean
+  repairSucceeded: boolean
+  repaired: ToolUseBlock | null
+  confidence: number           // 0.0 – 1.0
+}
+
+export interface ToolCallReliabilityConfig {
+  maxRepairAttempts: number           // default: 2
+  enableStructuredOutputFallback: boolean  // default: true for Ollama
+  enableGracefulDegradation: boolean  // default: true
+  degradationMode: 'describe' | 'skip' | 'error'
+  repairLogEnabled: boolean           // default: true in dev
+}
+
+export interface ReliabilityLayer {
+  process(
+    rawResponse: ModelResponse,
+    expectedTool: ToolDefinition | null,
+    config: ToolCallReliabilityConfig
+  ): Promise<ReliabilityResult>
+}
+
+export interface ReliabilityResult {
+  toolCalls: ToolUseBlock[]
+  diagnosis: ToolCallDiagnosis[]
+  degraded: boolean
+  degradationReason?: string
+}
+B.4 Detection Engine
+TypeScript
+
+// packages/core/src/reliability/DetectionEngine.ts
+
+export class DetectionEngine {
+
+  detect(raw: string, registry: ToolRegistry): ToolCallDiagnosis {
+
+    // 1. Try standard JSON parse
+    try {
+      const parsed = JSON.parse(raw)
+      if (this.isValidToolCall(parsed, registry)) {
+        return { raw, failureMode: null, repairAttempted: false,
+                 repairSucceeded: true, repaired: parsed, confidence: 1.0 }
+      }
+    } catch (e) {
+      // fall through to repair
+    }
+
+    // 2. Detect prose embedding: "I'll use the read_file tool: {..."
+    const embeddedJson = this.extractEmbeddedJson(raw)
+    if (embeddedJson) {
+      return { raw, failureMode: 'extra_prose', repairAttempted: false,
+               repairSucceeded: false, repaired: null,
+               confidence: 0.7, extractedCandidate: embeddedJson }
+    }
+
+    // 3. Detect truncation
+    if (raw.trim().startsWith('{') && !raw.trim().endsWith('}')) {
+      return { raw, failureMode: 'truncated_output', ... }
+    }
+
+    // 4. Detect double encoding
+    if (raw.startsWith('"') && raw.includes('\\n')) {
+      return { raw, failureMode: 'double_encoded', ... }
+    }
+
+    // 5. No tool call at all — model returned prose
+    return { raw, failureMode: 'no_tool_call', confidence: 0.9, ... }
+  }
+
+  private extractEmbeddedJson(text: string): string | null {
+    // Find the first { and attempt to extract balanced JSON
+    const start = text.indexOf('{')
+    if (start === -1) return null
+    let depth = 0
+    for (let i = start; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      if (text[i] === '}') depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+    return null
+  }
+}
+B.5 Repair Engine
+TypeScript
+
+// packages/core/src/reliability/RepairEngine.ts
+
+export class RepairEngine {
+
+  async repair(
+    diagnosis: ToolCallDiagnosis,
+    schema: ToolDefinition,
+    attempt: number
+  ): Promise<ToolUseBlock | null> {
+
+    switch (diagnosis.failureMode) {
+
+      case 'malformed_json':
+        return this.repairMalformedJson(diagnosis.raw)
+
+      case 'extra_prose':
+        return this.parseEmbeddedJson(diagnosis.raw)
+
+      case 'truncated_output':
+        // Attempt to close open braces/brackets
+        return this.closeOpenStructure(diagnosis.raw)
+
+      case 'double_encoded':
+        return JSON.parse(JSON.parse(diagnosis.raw))
+
+      case 'missing_required_field':
+        // Inject schema defaults for missing required fields
+        return this.injectDefaults(diagnosis.repaired, schema)
+
+      case 'type_mismatch':
+        return this.coerceTypes(diagnosis.repaired, schema)
+
+      case 'no_tool_call':
+        // MODEL_COMPENSATION: Weak models often describe rather than call.
+        // Use a structured output re-prompt with strict JSON mode.
+        if (attempt < 2) {
+          return this.structuredOutputRePrompt(diagnosis.raw, schema)
+        }
+        return null
+
+      default:
+        return null
+    }
+  }
+
+  private repairMalformedJson(raw: string): ToolUseBlock | null {
+    // Strategy 1: strip trailing commas
+    let attempt = raw.replace(/,\s*([}\]])/g, '$1')
+    try { return JSON.parse(attempt) } catch {}
+
+    // Strategy 2: add missing closing braces
+    attempt = this.closeOpenStructure(raw)
+    try { return JSON.parse(attempt) } catch {}
+
+    // Strategy 3: extract largest valid JSON substring
+    const extracted = this.extractLargestValidJson(raw)
+    if (extracted) return extracted
+
+    return null
+  }
+
+  private closeOpenStructure(raw: string): string {
+    let open = 0
+    let openBracket = 0
+    for (const ch of raw) {
+      if (ch === '{') open++
+      if (ch === '}') open--
+      if (ch === '[') openBracket++
+      if (ch === ']') openBracket--
+    }
+    return raw + ']'.repeat(Math.max(0, openBracket))
+                + '}'.repeat(Math.max(0, open))
+  }
+}
+B.6 Structured Output Enforcer (Ollama Grammar Mode)
+When repair fails, the Structured Output Enforcer re-calls the model with grammar-constrained generation, which forces JSON schema conformance at the token-sampling level.
+
+TypeScript
+
+// packages/core/src/reliability/StructuredOutputEnforcer.ts
+
+export class StructuredOutputEnforcer {
+
+  async enforce(
+    messages: Message[],
+    tool: ToolDefinition,
+    provider: ProviderAdapter
+  ): Promise<ToolUseBlock | null> {
+
+    if (!provider.supportsStructuredOutput) return null
+
+    // Rebuild request with explicit JSON schema enforcement
+    const enforcedRequest: ModelRequest = {
+      messages,
+      // Ollama format param: forces JSON schema conformance
+      format: tool.inputSchema,
+      // Strip tool_choice — we're forcing JSON directly
+      tools: undefined,
+      tool_choice: undefined,
+      // Add explicit instruction at end of last user message
+      system: `You must respond with ONLY valid JSON matching this schema:
+${JSON.stringify(tool.inputSchema, null, 2)}
+No prose. No explanation. JSON only.`
+    }
+
+    const response = await provider.call(enforcedRequest)
+
+    try {
+      const parsed = JSON.parse(response.content)
+      return {
+        type: 'tool_use',
+        name: tool.name,
+        id: generateId(),
+        input: parsed
+      }
+    } catch {
+      return null
+    }
+  }
+}
+B.7 Graceful Degradation Controller
+TypeScript
+
+// packages/core/src/reliability/GracefulDegradationController.ts
+
+export class GracefulDegradationController {
+
+  async degrade(
+    originalPrompt: string,
+    tool: ToolDefinition,
+    mode: 'describe' | 'skip' | 'error',
+    emitter: EventEmitter
+  ): Promise<DegradationResult> {
+
+    switch (mode) {
+
+      case 'describe':
+        // Emit a warning to UI, return a synthetic "description" result
+        emitter.emit('tool_degraded', {
+          toolName: tool.name,
+          reason: 'Tool call failed after repair attempts. Model described intent.',
+          severity: 'warning'
+        })
+        return {
+          degraded: true,
+          syntheticResult: `[DEGRADED] Model could not execute ${tool.name}. ` +
+            `Model described: "${originalPrompt.slice(0, 200)}..."`,
+          continueLoop: true
+        }
+
+      case 'skip':
+        emitter.emit('tool_skipped', { toolName: tool.name })
+        return { degraded: true, syntheticResult: null, continueLoop: true }
+
+      case 'error':
+        throw new ToolCallReliabilityError(
+          `Tool call to ${tool.name} failed after all repair attempts.`
+        )
+    }
+  }
+}
+B.8 Integration into QueryLoop
+TypeScript
+
+// packages/core/src/agent/queryLoop.ts  (modified section)
+
+const reliabilityLayer = new ToolCallReliabilityLayer(config.reliability)
+
+for (const block of response.content) {
+  if (block.type === 'tool_use') {
+
+    // Pass through reliability layer before execution
+    const reliabilityResult = await reliabilityLayer.process(
+      block,
+      registry.get(block.name),
+      session.providerProfile.reliabilityConfig
+    )
+
+    if (reliabilityResult.degraded) {
+      // Inject degradation notice into history and continue
+      history.push(reliabilityResult.degradationNotice)
+      continue
+    }
+
+    // Continue with normal permission gate → execution path
+    const approved = await permissionGate.check(reliabilityResult.toolCalls[0])
+    // ...
+  }
+}
+B.9 Provider-Specific Reliability Profiles
+TypeScript
+
+// packages/core/src/config/reliabilityProfiles.ts
+
+export const RELIABILITY_PROFILES: Record<string, ToolCallReliabilityConfig> = {
+
+  'anthropic/*': {
+    maxRepairAttempts: 0,
+    enableStructuredOutputFallback: false,
+    enableGracefulDegradation: false,
+    degradationMode: 'error',
+    repairLogEnabled: false
+  },
+
+  'openai/gpt-4*': {
+    maxRepairAttempts: 1,
+    enableStructuredOutputFallback: true,
+    enableGracefulDegradation: true,
+    degradationMode: 'describe',
+    repairLogEnabled: true
+  },
+
+  'ollama/llama3*': {
+    maxRepairAttempts: 2,
+    enableStructuredOutputFallback: true,
+    enableGracefulDegradation: true,
+    degradationMode: 'describe',
+    repairLogEnabled: true
+  },
+
+  'ollama/mistral*': {
+    maxRepairAttempts: 2,
+    enableStructuredOutputFallback: true,
+    enableGracefulDegradation: true,
+    degradationMode: 'describe',
+    repairLogEnabled: true
+  },
+
+  'ollama/phi*': {
+    maxRepairAttempts: 2,
+    enableStructuredOutputFallback: true,
+    enableGracefulDegradation: true,
+    degradationMode: 'skip',    // phi models often can't recover — skip silently
+    repairLogEnabled: true
+  },
+
+  'default': {
+    maxRepairAttempts: 1,
+    enableStructuredOutputFallback: true,
+    enableGracefulDegradation: true,
+    degradationMode: 'describe',
+    repairLogEnabled: true
+  }
+}
+SECTION C — ContextBudgetProfile
+C.1 Why Fixed Thresholds Break Local Models
+The base document's compaction thresholds (e.g., "auto-compact at 80% of context window") assume a large, fixed context window. Commercial models have 100K–200K token windows. Local models do not:
+
+Model	Default ctx (Ollama)	Max safe ctx (8GB VRAM)	Max safe ctx (16GB VRAM)	Max safe ctx (32GB+ VRAM)
+Llama 3.1 8B	2048	4096	8192	32768
+Llama 3.1 70B	2048	N/A (too large)	4096	16384
+Mistral 7B	2048	4096	8192	32768
+Qwen2.5 14B	4096	4096	8192	32768
+Phi-3 mini	2048	4096	8192	16384
+Claude (API)	200000	N/A	N/A	N/A
+GPT-4o (API)	128000	N/A	N/A	N/A
+A fixed "compact at 80K tokens" rule will never trigger for a local model with a 4K window, while the context silently overflows and the model begins hallucinating from the beginning of a conversation.
+
+C.2 ContextBudgetProfile Type
+TypeScript
+
+// packages/core/src/context/ContextBudgetProfile.ts
+
+export interface ContextBudgetProfile {
+  // Identity
+  provider: string              // e.g., 'ollama', 'anthropic', 'openai'
+  model: string                 // e.g., 'llama3.1:8b', 'claude-3-5-sonnet'
+
+  // Detected limits
+  hardLimit: number             // Total context window in tokens
+  safeLimit: number             // 90% of hardLimit (leave headroom)
+  detectedVRAM?: number         // GB of VRAM detected (local only)
+
+  // Compaction thresholds (as fraction of safeLimit)
+  microCompactThreshold: number // default: 0.60 — start trimming tool outputs
+  autoCompactThreshold: number  // default: 0.75 — trigger auto-compact summarization
+  fullCompactThreshold: number  // default: 0.88 — full compaction required
+
+  // Memory injection budget (max tokens to use for memory/wiki/graph in system prompt)
+  memoryBudget: number          // default: min(4096, safeLimit * 0.20)
+  graphBudget: number           // default: min(2048, safeLimit * 0.10)
+  wikiBudget: number            // default: min(2048, safeLimit * 0.10)
+
+  // Tool output handling
+  maxToolOutputTokens: number   // default: min(8192, safeLimit * 0.25)
+  toolOutputTruncationMode: 'head' | 'tail' | 'middle-out' | 'summary'
+
+  // History handling
+  rollingWindowTurns: number    // How many recent turns to always keep verbatim
+}
+C.3 Auto-Detection at Session Start
+TypeScript
+
+// packages/core/src/context/ContextBudgetDetector.ts
+
+export class ContextBudgetDetector {
+
+  async detect(
+    provider: ProviderAdapter,
+    modelId: string
+  ): Promise<ContextBudgetProfile> {
+
+    let hardLimit: number
+
+    // 1. Ask provider directly (if supported)
+    const modelInfo = await provider.getModelInfo?.(modelId)
+    if (modelInfo?.contextWindow) {
+      hardLimit = modelInfo.contextWindow
+    }
+    // 2. Ollama: call /api/show to get modelfile parameters
+    else if (provider.id === 'ollama') {
+      hardLimit = await this.detectOllamaContextWindow(modelId)
+    }
+    // 3. Known model table lookup
+    else {
+      hardLimit = KNOWN_CONTEXT_WINDOWS[modelId] ?? 4096
+    }
+
+    const safeLimit = Math.floor(hardLimit * 0.90)
+
+    return {
+      provider: provider.id,
+      model: modelId,
+      hardLimit,
+      safeLimit,
+
+      // Adaptive thresholds
+      microCompactThreshold: 0.60,
+      autoCompactThreshold: 0.75,
+      fullCompactThreshold: 0.88,
+
+      // Memory budgets: scale with context size, capped at sensible maxima
+      memoryBudget: Math.min(4096, Math.floor(safeLimit * 0.20)),
+      graphBudget: Math.min(2048, Math.floor(safeLimit * 0.10)),
+      wikiBudget: Math.min(2048, Math.floor(safeLimit * 0.10)),
+
+      // Tool output: proportional to context, never more than 25%
+      maxToolOutputTokens: Math.min(8192, Math.floor(safeLimit * 0.25)),
+      toolOutputTruncationMode:
+        safeLimit < 8192 ? 'summary' :
+        safeLimit < 32768 ? 'middle-out' :
+        'head',
+
+      // Rolling window: always keep last N turns verbatim
+      rollingWindowTurns:
+        safeLimit < 4096 ? 3 :
+        safeLimit < 16384 ? 8 :
+        20
+    }
+  }
+
+  private async detectOllamaContextWindow(modelId: string): Promise<number> {
+    try {
+      const response = await fetch('http://localhost:11434/api/show', {
+        method: 'POST',
+        body: JSON.stringify({ name: modelId })
+      })
+      const data = await response.json()
+      // Parse num_ctx from modelfile parameters
+      const numCtxMatch = data.modelfile?.match(/num_ctx\s+(\d+)/)
+      if (numCtxMatch) return parseInt(numCtxMatch[1])
+    } catch {}
+    return 2048  // Conservative fallback for Ollama
+  }
+}
+
+// Known context windows for common models (fallback table)
+export const KNOWN_CONTEXT_WINDOWS: Record<string, number> = {
+  'claude-3-5-sonnet-20241022': 200000,
+  'claude-3-5-haiku-20241022': 200000,
+  'claude-3-opus-20240229': 200000,
+  'gpt-4o': 128000,
+  'gpt-4o-mini': 128000,
+  'llama3.1:8b': 131072,    // Max supported, but VRAM-constrained at runtime
+  'llama3.1:70b': 131072,
+  'llama3.2:3b': 131072,
+  'mistral:7b': 32768,
+  'qwen2.5:14b': 131072,
+  'phi3:mini': 128000,
+  'gemma2:9b': 8192,
+  'deepseek-coder:6.7b': 16384
+}
+C.4 Adaptive Compaction in the QueryLoop
+TypeScript
+
+// packages/core/src/context/AdaptiveCompactor.ts
+
+export class AdaptiveCompactor {
+
+  constructor(
+    private profile: ContextBudgetProfile,
+    private tokenCounter: TokenCounter,
+    private llm: QueryEngine
+  ) {}
+
+  async maybeCompact(
+    history: Message[],
+    systemPrompt: string
+  ): Promise<Message[]> {
+
+    const used = await this.tokenCounter.count([
+      { role: 'system', content: systemPrompt },
+      ...history
+    ])
+
+    const usageRatio = used / this.profile.safeLimit
+
+    if (usageRatio < this.profile.microCompactThreshold) {
+      return history  // No action needed
+    }
+
+    if (usageRatio < this.profile.autoCompactThreshold) {
+      // MicroCompact: truncate large tool outputs only
+      return this.microCompact(history)
+    }
+
+    if (usageRatio < this.profile.fullCompactThreshold) {
+      // AutoCompact: summarize older turns
+      return this.autoCompact(history)
+    }
+
+    // FullCompact: aggressive summary + keep only rolling window
+    return this.fullCompact(history)
+  }
+
+  private microCompact(history: Message[]): Message[] {
+    return history.map(msg => {
+      if (msg.role !== 'tool') return msg
+      const tokens = this.tokenCounter.countSync(msg.content)
+      if (tokens <= this.profile.maxToolOutputTokens) return msg
+
+      return {
+        ...msg,
+        content: this.truncate(
+          msg.content,
+          this.profile.maxToolOutputTokens,
+          this.profile.toolOutputTruncationMode
+        )
+      }
+    })
+  }
+
+  private async autoCompact(history: Message[]): Promise<Message[]> {
+    // Keep the last N turns verbatim
+    const keep = history.slice(-this.profile.rollingWindowTurns * 2)
+    const toSummarize = history.slice(0, -this.profile.rollingWindowTurns * 2)
+
+    if (toSummarize.length === 0) return history
+
+    const summary = await this.llm.summarize(toSummarize, {
+      maxTokens: Math.floor(this.profile.safeLimit * 0.15),
+      instruction: 'Summarize the key decisions, file changes, and outcomes. ' +
+                   'Preserve file paths, error messages, and explicit user preferences verbatim.'
+    })
+
+    return [
+      { role: 'user', content: `[CONTEXT SUMMARY — ${toSummarize.length} messages compressed]\n${summary}` },
+      { role: 'assistant', content: 'Understood. Continuing with context above.' },
+      ...keep
+    ]
+  }
+
+  private truncate(
+    content: string,
+    maxTokens: number,
+    mode: ToolOutputTruncationMode
+  ): string {
+    switch (mode) {
+      case 'head':
+        return content.slice(0, maxTokens * 4) + '\n[... truncated ...]'
+      case 'tail':
+        return '[... truncated ...]\n' + content.slice(-maxTokens * 4)
+      case 'middle-out':
+        const half = (maxTokens * 4) / 2
+        return content.slice(0, half) +
+               `\n[... ${content.length - maxTokens * 8} chars truncated ...]\n` +
+               content.slice(-half)
+      case 'summary':
+        // For very small context windows, trigger an inline summary
+        return `[Tool output summarized: ${content.slice(0, 200)}... (${content.length} chars total)]`
+    }
+  }
+}
+C.5 Profile in Session Initialization
+TypeScript
+
+// packages/core/src/session/SessionManager.ts (modified)
+
+async createSession(options: SessionOptions): Promise<Session> {
+  const provider = this.router.resolve(options.providerId)
+
+  // Auto-detect context budget at session creation
+  const budgetProfile = await this.budgetDetector.detect(
+    provider,
+    options.modelId
+  )
+
+  // Warn user if context is very constrained
+  if (budgetProfile.safeLimit < 4096) {
+    this.emitter.emit('session_warning', {
+      type: 'constrained_context',
+      message: `Model ${options.modelId} has a ${budgetProfile.safeLimit} token ` +
+               `safe context limit. Complex tasks may require frequent compaction.`,
+      severity: 'info'
+    })
+  }
+
+  return new Session({ ...options, budgetProfile })
+}
+SECTION D — ModelCapabilityRegistry
+D.1 Why This Exists
+The provider router knows where to send a request. The ModelCapabilityRegistry knows what a model can do once it gets there. Without this registry, the orchestrator must either:
+
+Assume all models can do everything (causes runtime failures), or
+Hard-code model names in tool routing logic (unmaintainable)
+The registry makes capability-aware routing a first-class concern.
+
+D.2 Capability Taxonomy
+TypeScript
+
+// packages/core/src/registry/ModelCapabilityRegistry.ts
+
+export interface ModelCapabilities {
+  // Core capabilities
+  toolUse: ToolUseCapability
+  vision: VisionCapability
+  structuredOutput: StructuredOutputCapability
+  codeExecution: boolean          // Native code execution (not shell tool)
+  streaming: boolean
+  systemPrompt: boolean
+
+  // Context
+  contextWindow: number
+  maxOutputTokens: number
+
+  // Quality tier (for routing decisions)
+  tier: 'frontier' | 'standard' | 'lightweight' | 'local-large' | 'local-small'
+
+  // Provider-specific metadata
+  providerNotes?: string          // e.g., "tool_choice strict not supported"
+}
+
+export type ToolUseCapability =
+  | 'none'                        // No tool calling at all
+  | 'basic'                       // Tool calling works but unreliable
+  | 'reliable'                    // Tool calling is reliable, may need schema massage
+  | 'native'                      // Full native tool calling (Anthropic/OpenAI standard)
+  | 'native-parallel'             // Parallel tool calling supported
+
+export type VisionCapability =
+  | 'none'
+  | 'images'                      // Can process images
+  | 'images-and-docs'             // Images + PDFs/documents
+  | 'full'                        // Images + docs + video frames
+
+export type StructuredOutputCapability =
+  | 'none'                        // No JSON mode
+  | 'json-mode'                   // Can be prompted for JSON
+  | 'json-schema'                 // Respects JSON schema in format param
+  | 'grammar-constrained'         // Full grammar/BNF constrained generation
+D.3 Built-In Registry (Initial Entries)
+TypeScript
+
+// packages/core/src/registry/builtInCapabilities.ts
+
+export const BUILT_IN_CAPABILITIES: Record<string, ModelCapabilities> = {
+
+  // ── Anthropic ─────────────────────────────────────────────────────
+  'claude-3-5-sonnet-20241022': {
+    toolUse: 'native-parallel',
+    vision: 'images-and-docs',
+    structuredOutput: 'json-schema',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 200000,
+    maxOutputTokens: 8192,
+    tier: 'frontier'
+  },
+  'claude-3-5-haiku-20241022': {
+    toolUse: 'native-parallel',
+    vision: 'images',
+    structuredOutput: 'json-schema',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 200000,
+    maxOutputTokens: 8192,
+    tier: 'standard'
+  },
+
+  // ── OpenAI ────────────────────────────────────────────────────────
+  'gpt-4o': {
+    toolUse: 'native-parallel',
+    vision: 'images-and-docs',
+    structuredOutput: 'json-schema',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 128000,
+    maxOutputTokens: 16384,
+    tier: 'frontier'
+  },
+  'gpt-4o-mini': {
+    toolUse: 'native-parallel',
+    vision: 'images',
+    structuredOutput: 'json-schema',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 128000,
+    maxOutputTokens: 16384,
+    tier: 'standard'
+  },
+
+  // ── Ollama / Local ─────────────────────────────────────────────────
+  'llama3.1:8b': {
+    toolUse: 'reliable',
+    vision: 'none',
+    structuredOutput: 'grammar-constrained',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 131072,      // model max; VRAM-constrained at runtime
+    maxOutputTokens: 4096,
+    tier: 'local-small',
+    providerNotes: 'num_ctx must be set explicitly; defaults to 2048 in Ollama'
+  },
+  'llama3.1:70b': {
+    toolUse: 'reliable',
+    vision: 'none',
+    structuredOutput: 'grammar-constrained',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 131072,
+    maxOutputTokens: 4096,
+    tier: 'local-large'
+  },
+  'llama3.2-vision:11b': {
+    toolUse: 'reliable',
+    vision: 'images',
+    structuredOutput: 'grammar-constrained',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 131072,
+    maxOutputTokens: 4096,
+    tier: 'local-small'
+  },
+  'mistral:7b': {
+    toolUse: 'basic',
+    vision: 'none',
+    structuredOutput: 'json-mode',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 32768,
+    maxOutputTokens: 4096,
+    tier: 'local-small',
+    providerNotes: 'Tool calling unreliable; prefer structured output enforcement'
+  },
+  'qwen2.5:14b': {
+    toolUse: 'reliable',
+    vision: 'none',
+    structuredOutput: 'grammar-constrained',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 131072,
+    maxOutputTokens: 8192,
+    tier: 'local-large'
+  },
+  'qwen2.5-coder:7b': {
+    toolUse: 'reliable',
+    vision: 'none',
+    structuredOutput: 'grammar-constrained',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 32768,
+    maxOutputTokens: 8192,
+    tier: 'local-small',
+    providerNotes: 'Optimized for code tasks; prefer for bash/file tools'
+  },
+  'phi3:mini': {
+    toolUse: 'basic',
+    vision: 'none',
+    structuredOutput: 'json-mode',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 128000,
+    maxOutputTokens: 2048,
+    tier: 'local-small',
+    providerNotes: 'Low RAM footprint; tool calling requires heavy prompting'
+  },
+  'deepseek-coder:6.7b': {
+    toolUse: 'basic',
+    vision: 'none',
+    structuredOutput: 'json-mode',
+    codeExecution: false,
+    streaming: true,
+    systemPrompt: true,
+    contextWindow: 16384,
+    maxOutputTokens: 4096,
+    tier: 'local-small',
+    providerNotes: 'Strong code generation; weak tool calling'
+  }
+}
+D.4 Registry Service + Dynamic Registration
+TypeScript
+
+// packages/core/src/registry/ModelCapabilityRegistry.ts
+
+export class ModelCapabilityRegistry {
+  private registry: Map<string, ModelCapabilities>
+
+  constructor() {
+    this.registry = new Map(Object.entries(BUILT_IN_CAPABILITIES))
+  }
+
+  get(modelId: string): ModelCapabilities {
+    // Exact match first
+    if (this.registry.has(modelId)) return this.registry.get(modelId)!
+
+    // Prefix match (e.g., 'llama3.1' matches 'llama3.1:8b')
+    for (const [key, caps] of this.registry) {
+      if (modelId.startsWith(key.split(':')[0])) return caps
+    }
+
+    // Default for unknown models
+    return this.unknownModelDefaults(modelId)
+  }
+
+  register(modelId: string, capabilities: ModelCapabilities): void {
+    this.registry.set(modelId, capabilities)
+  }
+
+  // Auto-probe an Ollama model and register its capabilities
+  async probe(modelId: string, provider: OllamaAdapter): Promise<ModelCapabilities> {
+    const modelInfo = await provider.show(modelId)
+
+    const caps: ModelCapabilities = {
+      toolUse: this.inferToolUse(modelInfo),
+      vision: this.inferVision(modelInfo),
+      structuredOutput: this.inferStructuredOutput(modelInfo),
+      codeExecution: false,
+      streaming: true,
+      systemPrompt: true,
+      contextWindow: this.extractNumCtx(modelInfo) ?? 2048,
+      maxOutputTokens: 4096,
+      tier: 'local-small'
+    }
+
+    this.register(modelId, caps)
+    return caps
+  }
+
+  canUseTools(modelId: string): boolean {
+    const caps = this.get(modelId)
+    return caps.toolUse !== 'none'
+  }
+
+  canSeeImages(modelId: string): boolean {
+    return this.get(modelId).vision !== 'none'
+  }
+
+  requiresReliabilityLayer(modelId: string): boolean {
+    const cap = this.get(modelId).toolUse
+    return cap === 'basic' || cap === 'reliable'
+  }
+
+  bestToolUseModel(candidates: string[]): string {
+    const TIER_SCORE = { 'native-parallel': 4, 'native': 3,
+                         'reliable': 2, 'basic': 1, 'none': 0 }
+    return candidates.sort((a, b) =>
+      TIER_SCORE[this.get(b).toolUse] - TIER_SCORE[this.get(a).toolUse]
+    )[0]
+  }
+
+  private unknownModelDefaults(modelId: string): ModelCapabilities {
+    return {
+      toolUse: 'basic',
+      vision: 'none',
+      structuredOutput: 'json-mode',
+      codeExecution: false,
+      streaming: true,
+      systemPrompt: true,
+      contextWindow: 4096,
+      maxOutputTokens: 2048,
+      tier: 'local-small',
+      providerNotes: 'Unknown model — using conservative defaults. Run probe() for detection.'
+    }
+  }
+}
+D.5 Capability-Aware Tool Routing
+The registry feeds into tool routing decisions in the orchestrator:
+
+TypeScript
+
+// packages/core/src/agent/CapabilityAwareRouter.ts
+
+export class CapabilityAwareRouter {
+
+  constructor(
+    private registry: ModelCapabilityRegistry,
+    private reliabilityLayer: ToolCallReliabilityLayer
+  ) {}
+
+  prepareRequest(
+    messages: Message[],
+    tools: ToolDefinition[],
+    modelId: string
+  ): ModelRequest {
+    const caps = this.registry.get(modelId)
+
+    // If model can't use tools at all, strip tools from request
+    if (caps.toolUse === 'none') {
+      return {
+        messages: this.injectToolDescriptionsAsProse(messages, tools),
+        tools: undefined,
+        tool_choice: undefined
+      }
+    }
+
+    // If model vision is none, strip image content blocks
+    const cleanedMessages = caps.vision === 'none'
+      ? this.stripImageBlocks(messages)
+      : messages
+
+    // For 'basic' tool use, reduce to single tool at a time
+    const activeTools = caps.toolUse === 'basic'
+      ? [tools[0]]     // One at a time, force simplest possible call
+      : tools
+
+    return {
+      messages: cleanedMessages,
+      tools: activeTools,
+      tool_choice: caps.toolUse === 'native-parallel' ? 'auto' : 'auto'
+    }
+  }
+}
+SECTION E — HooksRegistry
+E.1 What Hooks Are
+Hooks are deterministic, synchronous scripts that fire at lifecycle events in the agent loop. They are:
+
+Not AI: hooks contain no LLM calls
+Composable: multiple hooks can fire on the same event
+Blocking or non-blocking: some hooks can abort an action; others just observe
+User-owned: hooks are defined in the project's .locoworker/hooks/ directory
+This is the extensibility primitive that makes Locoworker a platform, not just a tool.
+
+E.2 Lifecycle Events
+TypeScript
+
+// packages/core/src/hooks/types.ts
+
+export type HookEvent =
+  // ── Session lifecycle ──────────────────────────────
+  | 'pre_session_start'          // Before session begins; can inject context
+  | 'post_session_end'           // After session ends; receives summary
+  | 'on_session_resume'          // When existing session is resumed
+
+  // ── Tool lifecycle ─────────────────────────────────
+  | 'pre_tool_call'              // Before ANY tool executes; can block
+  | 'post_tool_call'             // After ANY tool completes; receives result
+  | 'on_tool_error'              // When a tool throws; can suppress or transform
+
+  // ── File operations ────────────────────────────────
+  | 'pre_file_write'             // Before write_file; can block or transform
+  | 'post_file_write'            // After successful write; receives diff
+  | 'pre_file_read'              // Before read_file
+  | 'post_file_read'             // After read; can transform content
+
+  // ── Bash / shell ───────────────────────────────────
+  | 'pre_bash_exec'              // Before bash runs; receives command + args
+  | 'post_bash_exec'             // After bash completes; receives exit code + output
+
+  // ── Permissions ────────────────────────────────────
+  | 'on_permission_request'      // When gate fires; can auto-approve or auto-deny
+
+  // ── Context ────────────────────────────────────────
+  | 'on_compact'                 // When compaction fires
+  | 'on_context_warning'         // When context budget crosses threshold
+
+  // ── Agent orchestration ────────────────────────────
+  | 'on_subagent_spawn'          // When a sub-agent is created
+  | 'on_subagent_complete'       // When sub-agent returns result
+
+  // ── Memory ─────────────────────────────────────────
+  | 'on_memory_save'             // When agent saves to memory
+  | 'on_memory_read'             // When agent reads from memory
+E.3 Hook Definition Format
+Hooks are defined as simple scripts in .locoworker/hooks/ — no framework, no build step.
+
+TypeScript
+
+// .locoworker/hooks/lint-on-write.ts
+// Hook: post_file_write — run ESLint after every TypeScript file write
+
+import type { PostFileWriteContext, HookResult } from '@locoworker/hooks'
+
+export default async function lintOnWrite(ctx: PostFileWriteContext): Promise<HookResult> {
+  if (!ctx.filePath.endsWith('.ts') && !ctx.filePath.endsWith('.tsx')) {
+    return { action: 'continue' }
+  }
+
+  const { execa } = await import('execa')
+  const result = await execa('eslint', [ctx.filePath, '--fix'], {
+    reject: false,
+    cwd: ctx.projectRoot
+  })
+
+  return {
+    action: 'continue',
+    metadata: {
+      lintExitCode: result.exitCode,
+      lintOutput: result.stdout.slice(0, 500)
+    }
+  }
+}
+TypeScript
+
+// .locoworker/hooks/audit-bash.ts
+// Hook: pre_bash_exec — deny commands matching a blocklist
+
+import type { PreBashExecContext, HookResult } from '@locoworker/hooks'
+
+const BLOCKLIST = [
+  /rm\s+-rf\s+\/(?!\w)/,        // rm -rf / or similar root deletions
+  /curl\s+.*\|\s*(bash|sh)/,    // curl-pipe-to-shell
+  /wget\s+.*\|\s*(bash|sh)/,
+  />\s*\/etc\/passwd/
+]
+
+export default async function auditBash(ctx: PreBashExecContext): Promise<HookResult> {
+  for (const pattern of BLOCKLIST) {
+    if (pattern.test(ctx.command)) {
+      return {
+        action: 'block',
+        reason: `Command blocked by audit-bash hook: matched pattern ${pattern}`
+      }
+    }
+  }
+  return { action: 'continue' }
+}
+E.4 Hook Context Types
+TypeScript
+
+// packages/core/src/hooks/contexts.ts
+
+export interface BaseHookContext {
+  sessionId: string
+  projectRoot: string
+  modelId: string
+  turnNumber: number
+  timestamp: number
+}
+
+export interface PreToolCallContext extends BaseHookContext {
+  toolName: string
+  toolInput: Record<string, unknown>
+  toolDefinition: ToolDefinition
+}
+
+export interface PostToolCallContext extends BaseHookContext {
+  toolName: string
+  toolInput: Record<string, unknown>
+  toolResult: ToolResult
+  durationMs: number
+}
+
+export interface PreFileWriteContext extends BaseHookContext {
+  filePath: string
+  absolutePath: string
+  content: string
+  isNewFile: boolean
+  previousContent?: string
+}
+
+export interface PostFileWriteContext extends BaseHookContext {
+  filePath: string
+  absolutePath: string
+  content: string
+  diff: string              // unified diff format
+  bytesWritten: number
+}
+
+export interface PreBashExecContext extends BaseHookContext {
+  command: string
+  args: string[]
+  cwd: string
+  env: Record<string, string>
+}
+
+export interface PostBashExecContext extends BaseHookContext {
+  command: string
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+}
+
+export type HookResult =
+  | { action: 'continue'; metadata?: Record<string, unknown> }
+  | { action: 'block'; reason: string }
+  | { action: 'transform'; transformed: unknown; metadata?: Record<string, unknown> }
+  | { action: 'inject'; injection: string; metadata?: Record<string, unknown> }
+E.5 HooksRegistry Implementation
+TypeScript
+
+// packages/core/src/hooks/HooksRegistry.ts
+
+export class HooksRegistry {
+  private hooks: Map<HookEvent, HookDefinition[]> = new Map()
+
+  async loadFromDirectory(hooksDir: string): Promise<void> {
+    if (!existsSync(hooksDir)) return
+
+    const files = readdirSync(hooksDir)
+      .filter(f => f.endsWith('.ts') || f.endsWith('.js'))
+
+    for (const file of files) {
+      const hookModule = await import(join(hooksDir, file))
+      const hookFn = hookModule.default
+
+      // Infer event from file header comment or naming convention
+      const event = this.inferEvent(file, hookModule)
+      if (!event) {
+        console.warn(`Hook ${file}: could not infer event type. Add @hookEvent annotation.`)
+        continue
+      }
+
+      this.register(event, {
+        name: file,
+        fn: hookFn,
+        blocking: hookModule.blocking ?? true,
+        timeout: hookModule.timeout ?? 5000
+      })
+    }
+  }
+
+  register(event: HookEvent, hook: HookDefinition): void {
+    if (!this.hooks.has(event)) this.hooks.set(event, [])
+    this.hooks.get(event)!.push(hook)
+  }
+
+  async fire<T extends BaseHookContext>(
+    event: HookEvent,
+    context: T
+  ): Promise<HookFireResult> {
+
+    const hooks = this.hooks.get(event) ?? []
+    const results: HookResult[] = []
+
+    for (const hook of hooks) {
+      try {
+        const result = await Promise.race([
+          hook.fn(context),
+          this.timeout(hook.timeout, hook.name)
+        ])
+
+        results.push(result)
+
+        // If any blocking hook blocks, short-circuit
+        if (hook.blocking && result.action === 'block') {
+          return {
+            blocked: true,
+            blockReason: result.reason,
+            results
+          }
+        }
+      } catch (err) {
+        // Hook errors never crash the agent — they are logged and skipped
+        console.error(`Hook ${hook.name} error:`, err)
+        results.push({ action: 'continue', metadata: { hookError: String(err) } })
+      }
+    }
+
+    return { blocked: false, results }
+  }
+
+  private timeout(ms: number, hookName: string): Promise<never> {
+    return new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Hook ${hookName} timed out after ${ms}ms`)), ms)
+    )
+  }
+}
+E.6 Hook Integration Into Tool Executor
+TypeScript
+
+// packages/core/src/tools/ToolExecutor.ts (modified)
+
+async execute(call: ToolUseBlock, session: Session): Promise<ToolResult> {
+
+  // Fire pre_tool_call hook
+  const preResult = await this.hooks.fire('pre_tool_call', {
+    ...session.hookContext(),
+    toolName: call.name,
+    toolInput: call.input,
+    toolDefinition: this.registry.get(call.name)
+  })
+
+  if (preResult.blocked) {
+    return {
+      type: 'tool_result',
+      tool_use_id: call.id,
+      content: `[BLOCKED BY HOOK] ${preResult.blockReason}`,
+      is_error: true
+    }
+  }
+
+  // Execute the tool
+  const startTime = Date.now()
+  const result = await this.registry.get(call.name).execute(call.input, session)
+  const duration = Date.now() - startTime
+
+  // Fire post_tool_call hook
+  await this.hooks.fire('post_tool_call', {
+    ...session.hookContext(),
+    toolName: call.name,
+    toolInput: call.input,
+    toolResult: result,
+    durationMs: duration
+  })
+
+  return result
+}
+E.7 Built-In Hooks (Shipped by Default)
+These are pre-installed and enabled by default, but can be overridden or disabled:
+
+text
+
+.locoworker/hooks/
+├── built-in/
+│   ├── file-history-snapshot.ts    # pre_file_write — creates snapshot (see Section F)
+│   ├── bash-safety-audit.ts        # pre_bash_exec — checks blocklist
+│   ├── cost-threshold-warn.ts      # post_tool_call — warns if session cost exceeds limit
+│   ├── diff-logger.ts              # post_file_write — logs diffs to session log
+│   └── permission-memory.ts        # on_permission_request — remembers previous approvals
+└── user/
+    └── (user-defined hooks go here)
+SECTION F — File History & Rewind
+F.1 Why This Is Non-Negotiable
+Any system that runs bash commands and edits files on a user's machine can cause irreversible damage in a single turn. Without a rewind mechanism, one bad prompt + one hallucinated rm -rf can destroy hours of work. This is not a "nice to have" — it is the safety net that makes aggressive tool use trustworthy.
+
+The rewind system is implemented as a pre-write hook that silently snapshots files before every write. It does not require git. It does not require user action. It is always on by default.
+
+F.2 Architecture
+text
+
+~/.locoworker/file-history/
+└── <sessionId>/
+    ├── manifest.json               # Ordered list of all snapshots this session
+    ├── <turn>-<timestamp>-<hash>/
+    │   ├── files/
+    │   │   ├── <escaped-path-1>    # Full copy of file before write
+    │   │   └── <escaped-path-2>
+    │   └── meta.json               # turn, tool, command, filePaths[]
+    └── ...
+F.3 FileHistoryManager
+TypeScript
+
+// packages/core/src/history/FileHistoryManager.ts
+
+export class FileHistoryManager {
+  private baseDir: string
+
+  constructor(private sessionId: string) {
+    this.baseDir = join(
+      homedir(), '.locoworker', 'file-history', sessionId
+    )
+    mkdirSync(this.baseDir, { recursive: true })
+  }
+
+  async snapshot(
+    filePaths: string[],
+    turn: number,
+    toolName: string,
+    command?: string
+  ): Promise<string> {
+    const snapshotId = `${turn}-${Date.now()}-${randomBytes(4).toString('hex')}`
+    const snapshotDir = join(this.baseDir, snapshotId, 'files')
+    mkdirSync(snapshotDir, { recursive: true })
+
+    const snapshotted: string[] = []
+
+    for (const filePath of filePaths) {
+      if (!existsSync(filePath)) continue
+
+      // Escape path for use as filename
+      const escapedPath = filePath
+        .replace(/\//g, '__SLASH__')
+        .replace(/\\/g, '__BACKSLASH__')
+
+      copyFileSync(filePath, join(snapshotDir, escapedPath))
+      snapshotted.push(filePath)
+    }
+
+    // Write metadata
+    writeFileSync(
+      join(this.baseDir, snapshotId, 'meta.json'),
+      JSON.stringify({
+        snapshotId,
+        turn,
+        toolName,
+        command,
+        timestamp: Date.now(),
+        files: snapshotted
+      }, null, 2)
+    )
+
+    // Append to manifest
+    this.appendManifest({ snapshotId, turn, timestamp: Date.now() })
+
+    return snapshotId
+  }
+
+  async rewindToTurn(turn: number): Promise<RewindResult> {
+    const manifest = this.loadManifest()
+
+    // Find all snapshots at or before the target turn
+    const relevantSnapshots = manifest
+      .filter(s => s.turn <= turn)
+      .sort((a, b) => b.timestamp - a.timestamp)  // Most recent first
+
+    const restored: string[] = []
+    const restoredFiles = new Set<string>()
+
+    for (const entry of relevantSnapshots) {
+      const metaPath = join(this.baseDir, entry.snapshotId, 'meta.json')
+      const meta: SnapshotMeta = JSON.parse(readFileSync(metaPath, 'utf-8'))
+
+      for (const filePath of meta.files) {
+        // Only restore each file once (to its most recent pre-change state)
+        if (restoredFiles.has(filePath)) continue
+
+        const escapedPath = filePath
+          .replace(/\//g, '__SLASH__')
+          .replace(/\\/g, '__BACKSLASH__')
+
+        const snapshotFile = join(
+          this.baseDir, entry.snapshotId, 'files', escapedPath
+        )
+
+        if (existsSync(snapshotFile)) {
+          copyFileSync(snapshotFile, filePath)
+          restoredFiles.add(filePath)
+          restored.push(filePath)
+        }
+      }
+    }
+
+    return {
+      turn,
+      filesRestored: restored,
+      snapshotsUsed: relevantSnapshots.map(s => s.snapshotId)
+    }
+  }
+
+  async rewindToSnapshot(snapshotId: string): Promise<RewindResult> {
+    const metaPath = join(this.baseDir, snapshotId, 'meta.json')
+    const meta: SnapshotMeta = JSON.parse(readFileSync(metaPath, 'utf-8'))
+
+    const restored: string[] = []
+
+    for (const filePath of meta.files) {
+      const escapedPath = filePath
+        .replace(/\//g, '__SLASH__')
+        .replace(/\\/g, '__BACKSLASH__')
+
+      const snapshotFile = join(this.baseDir, snapshotId, 'files', escapedPath)
+      if (existsSync(snapshotFile)) {
+        copyFileSync(snapshotFile, filePath)
+        restored.push(filePath)
+      }
+    }
+
+    return { turn: meta.turn, filesRestored: restored, snapshotsUsed: [snapshotId] }
+  }
+
+  listSnapshots(): SnapshotEntry[] {
+    return this.loadManifest()
+  }
+
+  async pruneOlderThan(days: number): Promise<number> {
+    const cutoff = Date.now() - (days * 86400000)
+    const manifest = this.loadManifest()
+    let pruned = 0
+
+    for (const entry of manifest) {
+      if (entry.timestamp < cutoff) {
+        rmSync(join(this.baseDir, entry.snapshotId), { recursive: true, force: true })
+        pruned++
+      }
+    }
+
+    this.writeManifest(manifest.filter(e => e.timestamp >= cutoff))
+    return pruned
+  }
+}
+F.4 File History as a Built-In Hook
+TypeScript
+
+// packages/core/src/hooks/built-in/file-history-snapshot.ts
+
+import type { PreFileWriteContext, HookResult } from '../types'
+import { FileHistoryManager } from '../../history/FileHistoryManager'
+
+export const blocking = true
+export const timeout = 3000
+
+export default async function fileHistorySnapshot(
+  ctx: PreFileWriteContext
+): Promise<HookResult> {
+  const manager = new FileHistoryManager(ctx.sessionId)
+
+  const snapshotId = await manager.snapshot(
+    [ctx.absolutePath],
+    ctx.turnNumber,
+    'write_file'
+  )
+
+  return {
+    action: 'continue',
+    metadata: { snapshotId }
+  }
+}
+F.5 Bash Snapshot (Pre-Exec)
+For bash commands that modify files, we snapshot before execution based on command analysis:
+
+TypeScript
+
+// packages/core/src/hooks/built-in/bash-file-snapshot.ts
+
+import type { PreBashExecContext, HookResult } from '../types'
+import { FileHistoryManager } from '../../history/FileHistoryManager'
+import { inferAffectedFiles } from '../../utils/bashAnalysis'
+
+export const blocking = true
+export const timeout = 5000
+
+export default async function bashFileSnapshot(
+  ctx: PreBashExecContext
+): Promise<HookResult> {
+  const affectedFiles = await inferAffectedFiles(ctx.command, ctx.cwd)
+
+  if (affectedFiles.length === 0) {
+    return { action: 'continue' }
+  }
+
+  const manager = new FileHistoryManager(ctx.sessionId)
+  const snapshotId = await manager.snapshot(
+    affectedFiles,
+    ctx.turnNumber,
+    'bash',
+    ctx.command
+  )
+
+  return {
+    action: 'continue',
+    metadata: { snapshotId, snapshotted: affectedFiles }
+  }
+}
+F.6 Rewind Slash Command
+TypeScript
+
+// packages/core/src/commands/rewind.ts
+
+export const rewindCommand: SlashCommand = {
+  name: 'rewind',
+  description: 'Rewind file changes to a previous turn',
+  args: '[turn-number | snapshot-id | --list]',
+
+  async execute(args: string[], session: Session): Promise<CommandResult> {
+    const manager = new FileHistoryManager(session.id)
+
+    if (args[0] === '--list') {
+      const snapshots = manager.listSnapshots()
+      return {
+        output: formatSnapshotList(snapshots),
+        type: 'info'
+      }
+    }
+
+    const target = args[0]
+
+    if (!target) {
+      // Default: rewind last turn
+      const lastTurn = session.turnNumber - 1
+      const result = await manager.rewindToTurn(lastTurn)
+      return {
+        output: `✅ Rewound ${result.filesRestored.length} files to turn ${lastTurn}:\n` +
+                result.filesRestored.map(f => `  - ${f}`).join('\n'),
+        type: 'success'
+      }
+    }
+
+    // Parse as turn number or snapshot ID
+    const turnNum = parseInt(target)
+    const result = isNaN(turnNum)
+      ? await manager.rewindToSnapshot(target)
+      : await manager.rewindToTurn(turnNum)
+
+    return {
+      output: `✅ Rewound ${result.filesRestored.length} files.\n` +
+              result.filesRestored.map(f => `  - ${f}`).join('\n'),
+      type: 'success'
+    }
+  }
+}
+F.7 UI Integration (Rewind in Desktop App)
+The Desktop chat UI should show a "rewind" affordance in the activity log for every tool call that modified files:
+
+React
+
+// packages/desktop/src/components/ActivityLog/ToolCallEntry.tsx
+
+interface ToolCallEntryProps {
+  entry: ActivityEntry
+  onRewind?: (snapshotId: string) => void
+}
+
+export function ToolCallEntry({ entry, onRewind }: ToolCallEntryProps) {
+  const hasSnapshot = entry.metadata?.snapshotId != null
+
+  return (
+    <div className="tool-call-entry">
+      <ToolCallHeader entry={entry} />
+      <ToolCallResult entry={entry} />
+
+      {hasSnapshot && onRewind && (
+        <button
+          className="rewind-btn"
+          title={`Rewind files to before this ${entry.toolName} call`}
+          onClick={() => onRewind(entry.metadata.snapshotId)}
+        >
+          ↩ Rewind
+        </button>
+      )}
+    </div>
+  )
+}
+SECTION G — MCP Transport Update
+G.1 Current State vs. Base Doc
+The base document assumes SSE as the primary MCP transport. This is now outdated. As of MCP protocol version 2025-11-05, Streamable HTTP replaces SSE as the primary transport. SSE is now a legacy transport being phased out.
+
+The Locoworker MCP client layer must be updated accordingly.
+
+G.2 Transport Priority Matrix
+TypeScript
+
+// packages/core/src/mcp/MCPTransportSelector.ts
+
+export type MCPTransport = 'streamable-http' | 'sse' | 'stdio'
+
+export interface MCPServerConfig {
+  url?: string          // for HTTP/SSE transports
+  command?: string      // for stdio transport
+  args?: string[]
+  transport?: MCPTransport   // explicit override; otherwise auto-detect
+}
+
+export class MCPTransportSelector {
+  async select(config: MCPServerConfig): Promise<MCPTransport> {
+
+    // Explicit override
+    if (config.transport) return config.transport
+
+    // stdio: local process
+    if (config.command) return 'stdio'
+
+    // HTTP: probe capabilities endpoint
+    if (config.url) {
+      return await this.probeHttpTransport(config.url)
+    }
+
+    throw new Error('MCPServerConfig must have either url or command')
+  }
+
+  private async probeHttpTransport(url: string): Promise<MCPTransport> {
+    try {
+      // MCP 2025-11-05: Streamable HTTP servers respond to GET on the MCP endpoint
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json, text/event-stream' }
+      })
+
+      // Streamable HTTP returns JSON or 405 on GET
+      if (response.ok || response.status === 405) {
+        return 'streamable-http'
+      }
+
+      // SSE servers return text/event-stream on GET
+      const contentType = response.headers.get('content-type') ?? ''
+      if (contentType.includes('text/event-stream')) {
+        console.warn(
+          `MCP server at ${url} uses legacy SSE transport. ` +
+          `Update server to MCP 2025-11-05 Streamable HTTP.`
+        )
+        return 'sse'
+      }
+    } catch {}
+
+    // Default fallback
+    return 'streamable-http'
+  }
+}
+G.3 Updated MCP Client
+TypeScript
+
+// packages/core/src/mcp/MCPClient.ts
+
+export class MCPClient {
+  private transport: MCPTransport
+  private session: MCPSession | null = null
+
+  async connect(config: MCPServerConfig): Promise<void> {
+    const selector = new MCPTransportSelector()
+    this.transport = await selector.select(config)
+
+    switch (this.transport) {
+      case 'streamable-http':
+        this.session = await this.connectStreamableHTTP(config.url!)
+        break
+      case 'sse':
+        this.session = await this.connectSSE(config.url!)
+        break
+      case 'stdio':
+        this.session = await this.connectStdio(config.command!, config.args ?? [])
+        break
+    }
+  }
+
+  private async connectStreamableHTTP(url: string): Promise<MCPSession> {
+    // MCP 2025-11-05 Streamable HTTP: POST JSON-RPC to endpoint
+    // Responses may be streaming (chunked) or single response
+    return new StreamableHTTPSession(url)
+  }
+
+  private async connectSSE(url: string): Promise<MCPSession> {
+    // Legacy SSE: maintain EventSource for server-sent events
+    // POST JSON-RPC to /message, receive responses via SSE stream
+    console.warn('Using legacy SSE transport. Upgrade MCP server recommended.')
+    return new SSESession(url)
+  }
+
+  private async connectStdio(command: string, args: string[]): Promise<MCPSession> {
+    // Spawn process, communicate via stdin/stdout JSON-RPC
+    return new StdioSession(command, args)
+  }
+
+  async callTool(toolName: string, params: unknown): Promise<unknown> {
+    if (!this.session) throw new Error('MCP client not connected')
+    return this.session.callTool(toolName, params)
+  }
+
+  async listTools(): Promise<MCPToolDefinition[]> {
+    if (!this.session) throw new Error('MCP client not connected')
+    return this.session.listTools()
+  }
+}
+G.4 MCP Server Configuration Format
+Updated config format in settings.json:
+
+jsonc
+
+// .locoworker/settings.json (MCP section updated)
+{
+  "mcp": {
+    "servers": [
+      {
+        "name": "graphify",
+        "transport": "streamable-http",
+        "url": "http://localhost:3100/mcp",
+        "auth": null
+      },
+      {
+        "name": "llm-wiki",
+        "transport": "streamable-http",
+        "url": "http://localhost:3101/mcp",
+        "auth": null
+      },
+      {
+        "name": "filesystem-extended",
+        "transport": "stdio",
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/projects"]
+      },
+      {
+        "name": "legacy-sse-server",
+        "transport": "sse",           // explicit legacy — show deprecation warning
+        "url": "http://localhost:3102/sse"
+      }
+    ],
+    "timeout": 30000,
+    "retryAttempts": 3
+  }
+}
+SECTION H — Skills & Routines
+H.1 What Skills Are
+A Skill is a portable, shareable, installable unit of repeatable agent behavior. It is the Locoworker equivalent of a shell alias or npm script — but for agent workflows.
+
+Skills solve the problem of workflow reinvention: every team doing code reviews, writing changelogs, or deploying staging should not have to re-specify the entire agent workflow from scratch each time. Skills package that workflow once and make it invocable by anyone on the team.
+
+H.2 Skill Definition Format
+Skills live in .locoworker/skills/ or are installed from a registry into ~/.locoworker/skills/:
+
+YAML
+
+# .locoworker/skills/review-pr.skill.yaml
+
+name: review-pr
+version: 1.0.0
+description: "Review a pull request — check for bugs, style, security, and missing tests"
+author: "your-team"
+tags: [code-review, github, quality]
+
+# The slash command that invokes this skill
+command: /review-pr
+
+# Arguments the user can pass
+args:
+  - name: pr_number
+    type: string
+    required: false
+    description: "PR number to review (defaults to current branch)"
+  - name: focus
+    type: enum
+    values: [security, performance, style, all]
+    default: all
+    required: false
+
+# Required tool permissions this skill needs
+requiredTools:
+  - bash
+  - read_file
+  - web_fetch     # for fetching PR diff from GitHub API
+
+# Required MCP servers
+requiredMCP: []
+
+# The prompt template for this skill
+# Uses {{ arg.name }} for argument interpolation
+# Uses {{ context.projectRoot }}, {{ context.gitBranch }}, etc.
+prompt: |
+  Review {{ arg.pr_number ? 'PR #' + arg.pr_number : 'the current branch changes' }}.
+
+  Focus: {{ arg.focus }}
+
+  Steps:
+  1. Get the diff: `git diff main...HEAD` or fetch from GitHub if PR number provided
+  2. Read any files changed in the diff
+  3. Check for:
+     - Bugs and logic errors
+     - Security vulnerabilities (injection, auth bypass, secrets in code)
+     - Missing error handling
+     - Missing or inadequate tests
+     - Style inconsistencies with the codebase
+  4. Write a structured review with: Summary, Issues Found (critical/warning/info), and Suggestions
+  5. Save the review to `.locoworker/reviews/{{ context.timestamp }}-review.md`
+
+# Optional: post-skill hooks
+onComplete:
+  - command: "echo 'Review complete' | pbcopy"  # Copy notification to clipboard
+H.3 Skill Loader & Executor
+TypeScript
+
+// packages/core/src/skills/SkillManager.ts
+
+export interface Skill {
+  name: string
+  version: string
+  description: string
+  command: string
+  args: SkillArg[]
+  requiredTools: string[]
+  requiredMCP: string[]
+  prompt: string
+  onComplete?: string[]
+  source: 'local' | 'user' | 'registry'
+  filePath: string
+}
+
+export class SkillManager {
+  private skills: Map<string, Skill> = new Map()
+
+  async loadFromDirectory(skillsDir: string): Promise<void> {
+    if (!existsSync(skillsDir)) return
+
+    const files = readdirSync(skillsDir)
+      .filter(f => f.endsWith('.skill.yaml') || f.endsWith('.skill.yml'))
+
+    for (const file of files) {
+      const raw = readFileSync(join(skillsDir, file), 'utf-8')
+      const skill: Skill = {
+        ...parse(raw),
+        source: 'local',
+        filePath: join(skillsDir, file)
+      }
+      this.skills.set(skill.command, skill)
+    }
+  }
+
+  async invoke(
+    command: string,
+    userArgs: string[],
+    session: Session
+  ): Promise<SkillInvocationResult> {
+
+    const skill = this.skills.get(command)
+    if (!skill) throw new Error(`Skill not found: ${command}`)
+
+    // Parse and validate user-supplied arguments
+    const parsedArgs = this.parseArgs(skill.args, userArgs)
+
+    // Check tool availability
+    for (const toolName of skill.requiredTools) {
+      if (!session.toolRegistry.has(toolName)) {
+        throw new Error(`Skill ${skill.name} requires tool '${toolName}' which is not available`)
+      }
+    }
+
+    // Render prompt template
+    const renderedPrompt = this.renderTemplate(skill.prompt, {
+      arg: parsedArgs,
+      context: {
+        projectRoot: session.projectRoot,
+        gitBranch: await this.getGitBranch(session.projectRoot),
+        timestamp: new Date().toISOString().replace(/[:.]/g, '-'),
+        sessionId: session.id
+      }
+    })
+
+    return {
+      skill,
+      renderedPrompt,
+      parsedArgs
+    }
+  }
+
+  list(): Skill[] {
+    return Array.from(this.skills.values())
+  }
+
+  private renderTemplate(
+    template: string,
+    context: Record<string, unknown>
+  ): string {
+    return template.replace(
+      /\{\{\s*(.+?)\s*\}\}/g,
+      (_, expr) => {
+        try {
+          return Function('arg', 'context', `return ${expr}`)(
+            context.arg, context.context
+          ) ?? ''
+        } catch {
+          return `[TEMPLATE_ERROR: ${expr}]`
+        }
+      }
+    )
+  }
+}
+H.4 Skill Registry (Remote Install)
+TypeScript
+
+// packages/core/src/skills/SkillRegistry.ts
+
+export class SkillRegistry {
+  private registryUrl = 'https://registry.locoworker.dev/skills'   // future
+
+  async search(query: string): Promise<SkillRegistryEntry[]> {
+    const response = await fetch(`${this.registryUrl}/search?q=${encodeURIComponent(query)}`)
+    return response.json()
+  }
+
+  async install(skillId: string, installDir: string): Promise<void> {
+    const response = await fetch(`${this.registryUrl}/${skillId}/latest.skill.yaml`)
+    const content = await response.text()
+
+    const skill = parse(content) as Skill
+    const filename = `${skill.name}.skill.yaml`
+    writeFileSync(join(installDir, filename), content)
+  }
+}
+H.5 Built-In Skills (Shipped by Default)
+text
+
+~/.locoworker/skills/
+├── review-pr.skill.yaml          # Code review any PR or branch diff
+├── write-changelog.skill.yaml    # Generate CHANGELOG from git log
+├── explain-codebase.skill.yaml   # Produce onboarding doc for new contributors
+├── debug-error.skill.yaml        # Systematic debug workflow for an error message
+├── write-tests.skill.yaml        # Generate tests for a specified file/function
+├── deploy-staging.skill.yaml     # Run staging deploy with pre/post checks
+├── security-audit.skill.yaml     # Security scan of changed files
+└── refactor-module.skill.yaml    # Structured refactor with tests-first approach
+H.6 Skill Invocation in the Chat UI
+Skills appear in the slash command picker and in a dedicated "Skills" panel:
+
+text
+
+User: /review-pr 142 focus=security
+
+→ SkillManager resolves '/review-pr'
+→ Parses args: { pr_number: '142', focus: 'security' }
+→ Renders prompt template
+→ Injects rendered prompt into queryLoop as a new user message
+→ Session proceeds normally — model executes the skill workflow
+SECTION I — Competitive Differentiation
+I.1 The Landscape
+Before building, every Locoworker contributor must understand what already exists and why those tools are not sufficient for the goal. This is not a criticism of those tools — they are excellent — it is a clear statement of what problem space remains.
+
+I.2 Tool-by-Tool Comparison
+Open WebUI
+What it does: A beautiful, self-hosted chat interface for Ollama and OpenAI-compatible APIs. Supports RAG, model management, image generation, and document uploads.
+
+Why it's not enough:
+
+Chat-first, not agent-first. There is no tool execution loop, no file editing, no bash execution.
+No permission system. It can't be trusted with your filesystem.
+No project context. It has no concept of a CLAUDE.md, working directory, or codebase memory.
+No MCP integration. Extensions are limited to the WebUI plugin system.
+Locoworker's position vs. Open WebUI: Open WebUI is the right choice for "chat with a local model." Locoworker is the right choice for "agent that works in my codebase using a local model."
+
+Aider
+What it does: A terminal-based AI pair programmer that edits code using a diff-based approach. Mature, reliable, widely used.
+
+Why it's not enough:
+
+Terminal-only. No desktop GUI, no visual diff viewer, no activity panel.
+Code editing only. No general bash execution, no web tool, no multi-agent.
+No MCP. No extensibility via external tool servers.
+No persistent memory across sessions.
+No local LLM–optimized tool call reliability layer.
+Locoworker's position vs. Aider: Aider is a better code editor if you live in the terminal. Locoworker is better if you want a full agent environment with GUI, memory, and extensibility.
+
+Continue
+What it does: A VS Code and JetBrains extension for AI-assisted coding. Chat in the IDE, inline completions, context-aware autocomplete.
+
+Why it's not enough:
+
+IDE-bound. Works inside VS Code — not as a standalone agent.
+Completion/chat focused, not autonomous agent loop.
+MCP support was added recently but the core model is reactive (user asks → model responds), not agentic (model plans → model acts → model verifies).
+No skill system, no hooks, no memory.
+Locoworker's position vs. Continue: Continue is the right AI assistant inside VS Code. Locoworker is the right autonomous agent outside the editor, with VS Code integration as one surface.
+
+Cursor
+What it does: A fully AI-native code editor (VS Code fork) with deep IDE integration, multi-file context, and agent-mode for autonomous coding.
+
+Why it's not enough:
+
+Cloud-only. Cursor's most powerful features require their servers. No local LLM support in agent mode.
+Closed ecosystem. No hooks, no skills, no MCP (as of current release).
+No BYOK for agent mode. BYOK is available for completions, not for the full agent loop.
+No rewind. File safety is limited to the native undo in the editor.
+Locoworker's position vs. Cursor: Cursor is the best commercial AI IDE for cloud users. Locoworker is the right choice for privacy-conscious developers, local LLM users, open-source advocates, or teams that need customizable agent behavior.
+
+Claude Code (Official)
+What it does: The official Anthropic terminal agent. Exactly what Locoworker is inspired by.
+
+Why it's not enough for this use case:
+
+Anthropic API only. No Ollama, no OpenAI-compatible endpoints, no BYOK to other providers.
+No desktop GUI. Terminal only (Claude Code desktop is early-access as of mid-2025).
+No skills system. No portable, shareable agent workflows.
+No open hooks API. Hooks are a Claude Code Pro/Enterprise feature with limited configurability.
+Closed source. You can't modify the tool schemas, reliability layer, or compaction logic.
+Locoworker's position vs. Claude Code: Locoworker IS Claude Code's architecture, open-sourced, with local LLM support, GUI, skills, hooks, and BYOK.
+
+I.3 Differentiation Matrix
+Capability	Open WebUI	Aider	Continue	Cursor	Claude Code	Locoworker
+Local LLM (Ollama)	✅	✅	✅	❌	❌	✅
+BYOK (any API)	✅	✅	✅	Partial	❌	✅
+Agent loop (plan→act→verify)	❌	Partial	Partial	✅	✅	✅
+Desktop GUI	✅	❌	IDE only	✅	Early	✅
+File edit + bash tools	❌	✅	Partial	✅	✅	✅
+Permission gate	❌	Partial	❌	Partial	✅	✅
+Persistent memory	Partial	❌	❌	❌	✅	✅
+MCP extensibility	❌	❌	Recent	❌	✅	✅
+Skills / routines	❌	❌	❌	❌	Limited	✅
+Hooks system	❌	❌	❌	❌	Limited	✅
+File history / rewind	❌	❌	❌	❌	✅	✅
+Multi-agent orchestration	❌	❌	❌	Partial	✅	✅
+Tool reliability layer	N/A	N/A	N/A	N/A	N/A	✅
+Context budget profiles	N/A	Partial	❌	N/A	N/A	✅
+Open source	✅	✅	✅	❌	❌	✅
+I.4 The Locoworker Positioning Statement
+Locoworker is the open-source agent harness that gives you Claude Code–quality autonomous coding on any model — local or cloud — with a full desktop interface, team-shareable skills, lifecycle hooks, and complete file safety.
+
+It exists because the best commercial agent (Claude Code) only works on Anthropic's API, and the best local model interfaces (Open WebUI, Aider) don't have a production-grade agent loop.
+
+SECTION J — Phase Reordering & Scope Deferral
+J.1 Simulation & Council — Deferred to Phase 3+
+Per the Harness Philosophy in Section A, the Simulation and Council/Deliberation features from the base document are reclassified:
+
+text
+
+Base Document Classification: Phase 1-2
+New Classification: Phase 3+ (after core loop is production-grade)
+
+Reason: Both features are [SCAFFOLD] class — they add agent-to-agent 
+logic between the user and the model. They should only be built once 
+the single-agent loop is demonstrably reliable on local models.
+What gets cut from Phase 1-2:
+SimulationPanel (Tauri desktop)
+CouncilManager (multi-agent deliberation)
+AgentPersonaRegistry (council persona definitions)
+SimulationRunner (task simulation framework)
+VoteAggregator (council vote tallying)
+What replaces them in Phase 2:
+HooksRegistry (Section E)
+SkillManager (Section H)
+FileHistoryManager (Section F)
+ModelCapabilityRegistry (Section D)
+J.2 Revised Phase Plan
+Phase 1 — Foundation (Weeks 1-4)
+Goal: Single working agent loop on both Anthropic API and Ollama local model.
+
+text
+
+✅ Core agent loop (queryLoop + QueryEngine + streaming)
+✅ Tool registry: read_file, write_file, bash, web_fetch, list_directory
+✅ PermissionGate (basic approve/deny)
+✅ Provider router: Anthropic + OpenAI-compatible + Ollama
+✅ ContextBudgetProfile + AdaptiveCompactor (Section C)
+✅ ToolCallReliabilityLayer — Detection + Repair (Section B)
+✅ ModelCapabilityRegistry — Built-in entries (Section D)
+✅ File History + Rewind — snapshot hook + /rewind command (Section F)
+✅ Session management (create, resume, list)
+✅ CLAUDE.md loading + memory injection
+✅ Terminal UI surface (Ink)
+✅ MCP client — Streamable HTTP + stdio (Section G)
+End state: You can open a terminal, point Locoworker at a local repo, and it autonomously edits files and runs commands — on both Claude API and Llama 3.1 via Ollama.
+
+Phase 2 — Desktop + Extensibility (Weeks 5-8)
+Goal: Full desktop GUI + extensibility primitives.
+
+text
+
+✅ Tauri desktop app — 3-panel layout (chat, activity, preview)
+✅ HooksRegistry + built-in hooks (Section E)
+✅ SkillManager + built-in skills (Section H)
+✅ Multi-agent: Coordinator/Worker pattern only
+✅ Graphify MCP integration
+✅ LLMWiki MCP integration
+✅ AutoResearch loop integration
+✅ VS Code extension surface
+✅ Competitive differentiation — ensure Open WebUI import, Aider migration docs
+End state: Full desktop app, extensible via hooks and skills, with knowledge graph and wiki.
+
+Phase 3 — Advanced Features (Weeks 9+)
+Goal: Advanced orchestration, messaging, and community features.
+
+text
+
+🔵 Council / deliberation (multi-persona voting)
+🔵 Simulation panel
+🔵 Messaging gateway (Telegram/Discord)
+🔵 Skill registry (remote install)
+🔵 AutoDream memory consolidation
+🔵 Git worktree isolation for multi-agent
+🔵 Daemon / background automation
+SECTION K — Complete Revised Directory Structure
+text
+
+locoworker/
+├── packages/
+│   ├── core/                              # Agent engine
+│   │   └── src/
+│   │       ├── agent/
+│   │       │   ├── queryLoop.ts
+│   │       │   ├── QueryEngine.ts
+│   │       │   ├── CapabilityAwareRouter.ts     # NEW (Section D)
+│   │       │   └── CostTracker.ts
+│   │       ├── context/
+│   │       │   ├── ContextBudgetProfile.ts      # NEW (Section C)
+│   │       │   ├── ContextBudgetDetector.ts     # NEW (Section C)
+│   │       │   ├── AdaptiveCompactor.ts         # NEW (Section C)
+│   │       │   └── TokenCounter.ts
+│   │       ├── reliability/                     # NEW (Section B)
+│   │       │   ├── types.ts
+│   │       │   ├── DetectionEngine.ts
+│   │       │   ├── RepairEngine.ts
+│   │       │   ├── StructuredOutputEnforcer.ts
+│   │       │   ├── GracefulDegradationController.ts
+│   │       │   └── profiles.ts
+│   │       ├── registry/                        # NEW (Section D)
+│   │       │   ├── ModelCapabilityRegistry.ts
+│   │       │   └── builtInCapabilities.ts
+│   │       ├── hooks/                           # NEW (Section E)
+│   │       │   ├── types.ts
+│   │       │   ├── contexts.ts
+│   │       │   ├── HooksRegistry.ts
+│   │       │   └── built-in/
+│   │       │       ├── file-history-snapshot.ts
+│   │       │       ├── bash-file-snapshot.ts
+│   │       │       ├── bash-safety-audit.ts
+│   │       │       ├── cost-threshold-warn.ts
+│   │       │       ├── diff-logger.ts
+│   │       │       └── permission-memory.ts
+│   │       ├── history/                         # NEW (Section F)
+│   │       │   ├── FileHistoryManager.ts
+│   │       │   └── types.ts
+│   │       ├── skills/                          # NEW (Section H)
+│   │       │   ├── SkillManager.ts
+│   │       │   ├── SkillRegistry.ts
+│   │       │   └── types.ts
+│   │       ├── mcp/                             # UPDATED (Section G)
+│   │       │   ├── MCPClient.ts
+│   │       │   ├── MCPTransportSelector.ts
+│   │       │   ├── transports/
+│   │       │   │   ├── StreamableHTTPSession.ts  # PRIMARY
+│   │       │   │   ├── SSESession.ts             # LEGACY
+│   │       │   │   └── StdioSession.ts
+│   │       │   └── MCPToolAdapter.ts
+│   │       ├── tools/
+│   │       │   ├── ToolExecutor.ts              # UPDATED (hooks integration)
+│   │       │   ├── ToolRegistry.ts
+│   │       │   └── definitions/
+│   │       │       ├── files.ts
+│   │       │       ├── bash.ts
+│   │       │       ├── web.ts
+│   │       │       ├── memory.ts
+│   │       │       ├── git.ts
+│   │       │       └── agents.ts
+│   │       ├── permissions/
+│   │       │   ├── PermissionGate.ts
+│   │       │   └── PermissionModes.ts
+│   │       ├── providers/
+│   │       │   ├── ProviderRouter.ts
+│   │       │   ├── anthropic/
+│   │       │   ├── openai/
+│   │       │   ├── ollama/
+│   │       │   └── shims/
+│   │       │       └── OpenAIShim.ts
+│   │       ├── session/
+│   │       │   └── SessionManager.ts            # UPDATED (budget detection)
+│   │       └── commands/
+│   │           ├── rewind.ts                    # NEW (Section F)
+│   │           ├── compact.ts
+│   │           ├── memory.ts
+│   │           ├── wiki.ts
+│   │           └── skills.ts                    # NEW (Section H)
+│   │
+│   ├── desktop/                           # Tauri + React desktop app
+│   │   └── src/
+│   │       ├── components/
+│   │       │   ├── Chat/
+│   │       │   ├── ActivityLog/
+│   │       │   │   └── ToolCallEntry.tsx        # NEW (rewind button)
+│   │       │   ├── SkillPicker/                 # NEW (Section H)
+│   │       │   ├── RewindTimeline/              # NEW (Section F)
+│   │       │   └── ModelSelector/               # UPDATED (capability badges)
+│   │       └── ...
+│   │
+│   ├── terminal/                          # Ink terminal UI
+│   ├── wiki/                              # LLMWiki MCP integration
+│   ├── graphify/                          # Graphify MCP integration
+│   ├── research/                          # AutoResearch loop
+│   └── gateway/                          # Messaging gateway (Phase 2)
+│
+├── .locoworker/                           # Project-level config (per-repo)
+│   ├── settings.json
+│   ├── CLAUDE.md
+│   ├── hooks/
+│   │   ├── built-in/                      # Installed by default
+│   │   └── user/                          # User-defined hooks
+│   └── skills/
+│       ├── built-in/                      # Shipped skills
+│       └── user/                          # User-defined skills
+│
+└── docs/
+    ├── completeproject.md                 # Original design doc
+    ├── addendum-improvements.md           # THIS DOCUMENT
+    ├── harness-philosophy.md              # Section A standalone
+    └── competitive-analysis.md           # Section I standalone
+End of Addendum. This document is a direct continuation of completeproject.md. Together they form the complete Locoworker build specification. All interfaces, event types, directory paths, and config schemas in both documents are consistent with each other and ready to scaffold into real TypeScript packages.
+
+
+
+
+
+The 6 Missing Sections — Fully Specified
+SECTION L — Persistence Layer & Database Schema
+L.1 Why This Is Missing and Why It Matters
+Both documents describe sessions, memory, file history, skills, hooks, and settings — but never answer: where does all this data actually live? Without a defined persistence layer, every developer on the project will make different choices (flat JSON files vs. SQLite vs. IndexedDB), leading to incompatible data formats across surfaces and an unmaintainable storage system by Phase 2.
+
+The answer for Locoworker is: SQLite via better-sqlite3 for structured data, flat files for content blobs (history snapshots, wiki pages, graph output). This matches what Claude Code itself does — local, portable, no server required, offline-first.
+
+L.2 Storage Architecture
+text
+
+~/.locoworker/                          # Global user data
+├── locoworker.db                       # SQLite: sessions, memory, cost, settings
+├── file-history/                       # Blob: file snapshots (Section F)
+│   └── <sessionId>/
+├── memory/                             # Blob: memdir markdown files
+│   └── <projectHash>/
+│       ├── index.md
+│       └── entries/
+└── logs/                               # Structured NDJSON logs
+    └── <date>.ndjson
+
+<projectRoot>/.locoworker/              # Per-project data
+├── settings.json                       # Project-level config override
+├── CLAUDE.md                           # Project context (user-owned)
+├── hooks/                              # Project hooks
+├── skills/                             # Project skills
+├── wiki/                               # LLMWiki compiled output
+│   ├── pages/
+│   └── index.json
+└── graph/                              # Graphify output
+    ├── GRAPH_REPORT.md
+    └── graph.json
+L.3 SQLite Schema (Complete)
+SQL
+
+-- locoworker.db
+
+-- ─────────────────────────────────────────────────
+-- Sessions
+-- ─────────────────────────────────────────────────
+CREATE TABLE sessions (
+  id              TEXT PRIMARY KEY,
+  project_root    TEXT NOT NULL,
+  provider_id     TEXT NOT NULL,
+  model_id        TEXT NOT NULL,
+  title           TEXT,                    -- Auto-generated from first message
+  status          TEXT NOT NULL DEFAULT 'active',  -- active | completed | error
+  turn_count      INTEGER NOT NULL DEFAULT 0,
+  total_tokens    INTEGER NOT NULL DEFAULT 0,
+  total_cost_usd  REAL NOT NULL DEFAULT 0.0,
+  context_window  INTEGER,                 -- Detected at session start
+  created_at      INTEGER NOT NULL,        -- Unix ms
+  updated_at      INTEGER NOT NULL,
+  ended_at        INTEGER
+);
+
+-- ─────────────────────────────────────────────────
+-- Messages (conversation history)
+-- ─────────────────────────────────────────────────
+CREATE TABLE messages (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES sessions(id),
+  turn_number     INTEGER NOT NULL,
+  role            TEXT NOT NULL,           -- user | assistant | tool | system
+  content         TEXT NOT NULL,           -- JSON-encoded content blocks
+  tokens          INTEGER,
+  cost_usd        REAL,
+  created_at      INTEGER NOT NULL,
+  is_compacted    INTEGER NOT NULL DEFAULT 0  -- 1 if this replaced multiple msgs
+);
+
+CREATE INDEX idx_messages_session ON messages(session_id, turn_number);
+
+-- ─────────────────────────────────────────────────
+-- Tool calls (queryable separately from messages)
+-- ─────────────────────────────────────────────────
+CREATE TABLE tool_calls (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES sessions(id),
+  message_id      TEXT NOT NULL REFERENCES messages(id),
+  turn_number     INTEGER NOT NULL,
+  tool_name       TEXT NOT NULL,
+  tool_input      TEXT NOT NULL,           -- JSON
+  tool_result     TEXT,                    -- JSON (null if pending/error)
+  status          TEXT NOT NULL DEFAULT 'pending',  -- pending | success | error | blocked
+  duration_ms     INTEGER,
+  snapshot_id     TEXT,                    -- FK to file_snapshots if applicable
+  created_at      INTEGER NOT NULL,
+  completed_at    INTEGER
+);
+
+CREATE INDEX idx_tool_calls_session ON tool_calls(session_id);
+CREATE INDEX idx_tool_calls_tool    ON tool_calls(tool_name);
+
+-- ─────────────────────────────────────────────────
+-- File snapshots (index only; blobs in filesystem)
+-- ─────────────────────────────────────────────────
+CREATE TABLE file_snapshots (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES sessions(id),
+  turn_number     INTEGER NOT NULL,
+  tool_name       TEXT NOT NULL,           -- which tool triggered snapshot
+  command         TEXT,                    -- bash command if applicable
+  file_paths      TEXT NOT NULL,           -- JSON array of paths snapshotted
+  snapshot_dir    TEXT NOT NULL,           -- absolute path to snapshot dir
+  created_at      INTEGER NOT NULL
+);
+
+-- ─────────────────────────────────────────────────
+-- Memory entries (persistent agent memory)
+-- ─────────────────────────────────────────────────
+CREATE TABLE memory_entries (
+  id              TEXT PRIMARY KEY,
+  project_hash    TEXT NOT NULL,           -- sha256 of project_root
+  session_id      TEXT,                    -- null = cross-project memory
+  category        TEXT NOT NULL,           -- preference | decision | fact | warning
+  content         TEXT NOT NULL,
+  tags            TEXT,                    -- JSON array
+  importance      INTEGER NOT NULL DEFAULT 3,  -- 1-5
+  access_count    INTEGER NOT NULL DEFAULT 0,
+  last_accessed   INTEGER,
+  created_at      INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL,
+  is_archived     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX idx_memory_project   ON memory_entries(project_hash);
+CREATE INDEX idx_memory_category  ON memory_entries(category);
+CREATE VIRTUAL TABLE memory_fts USING fts5(content, tags, tokenize='porter');
+
+-- ─────────────────────────────────────────────────
+-- Cost tracking (daily/session rollups)
+-- ─────────────────────────────────────────────────
+CREATE TABLE cost_events (
+  id              TEXT PRIMARY KEY,
+  session_id      TEXT NOT NULL REFERENCES sessions(id),
+  provider_id     TEXT NOT NULL,
+  model_id        TEXT NOT NULL,
+  input_tokens    INTEGER NOT NULL,
+  output_tokens   INTEGER NOT NULL,
+  cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd        REAL NOT NULL,
+  created_at      INTEGER NOT NULL
+);
+
+-- Materialised daily totals (updated by trigger)
+CREATE TABLE cost_daily (
+  date_utc        TEXT NOT NULL,           -- YYYY-MM-DD
+  provider_id     TEXT NOT NULL,
+  model_id        TEXT NOT NULL,
+  total_cost_usd  REAL NOT NULL DEFAULT 0.0,
+  total_tokens    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (date_utc, provider_id, model_id)
+);
+
+-- ─────────────────────────────────────────────────
+-- Settings (key-value, typed, with scope)
+-- ─────────────────────────────────────────────────
+CREATE TABLE settings (
+  key             TEXT NOT NULL,
+  scope           TEXT NOT NULL,           -- global | project:<hash>
+  value           TEXT NOT NULL,           -- JSON-encoded
+  updated_at      INTEGER NOT NULL,
+  PRIMARY KEY (key, scope)
+);
+
+-- ─────────────────────────────────────────────────
+-- Provider credentials (encrypted at rest)
+-- ─────────────────────────────────────────────────
+CREATE TABLE provider_credentials (
+  provider_id     TEXT PRIMARY KEY,
+  encrypted_key   TEXT NOT NULL,           -- AES-256-GCM, key from OS keychain
+  key_hint        TEXT,                    -- last 4 chars for UI display
+  created_at      INTEGER NOT NULL,
+  last_used       INTEGER
+);
+L.4 Repository Layer (TypeScript)
+TypeScript
+
+// packages/core/src/persistence/Repository.ts
+
+export class SessionRepository {
+  constructor(private db: Database) {}
+
+  create(opts: CreateSessionOpts): Session {
+    const session: Session = {
+      id: generateId(),
+      ...opts,
+      status: 'active',
+      turnCount: 0,
+      totalTokens: 0,
+      totalCostUsd: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+    this.db.prepare(`INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(...sessionToRow(session))
+    return session
+  }
+
+  findById(id: string): Session | null {
+    return this.db.prepare(`SELECT * FROM sessions WHERE id = ?`).get(id) as Session | null
+  }
+
+  findRecent(limit = 20): Session[] {
+    return this.db.prepare(
+      `SELECT * FROM sessions ORDER BY updated_at DESC LIMIT ?`
+    ).all(limit) as Session[]
+  }
+
+  updateTurnCount(id: string, turns: number, tokens: number, cost: number): void {
+    this.db.prepare(
+      `UPDATE sessions SET turn_count = ?, total_tokens = ?, total_cost_usd = ?,
+       updated_at = ? WHERE id = ?`
+    ).run(turns, tokens, cost, Date.now(), id)
+  }
+}
+
+export class MemoryRepository {
+  constructor(private db: Database) {}
+
+  save(entry: MemoryEntry): void {
+    this.db.prepare(`INSERT OR REPLACE INTO memory_entries VALUES (...)`)
+      .run(...memoryToRow(entry))
+    // Keep FTS in sync
+    this.db.prepare(`INSERT INTO memory_fts(rowid, content, tags) VALUES (?, ?, ?)`)
+      .run(entry.id, entry.content, JSON.stringify(entry.tags))
+  }
+
+  search(query: string, projectHash: string, limit = 20): MemoryEntry[] {
+    return this.db.prepare(`
+      SELECT m.* FROM memory_entries m
+      JOIN memory_fts fts ON m.id = fts.rowid
+      WHERE fts MATCH ? AND m.project_hash = ?
+      AND m.is_archived = 0
+      ORDER BY rank, m.importance DESC
+      LIMIT ?
+    `).all(query, projectHash, limit) as MemoryEntry[]
+  }
+}
+SECTION M — Secure Key Storage
+M.1 The Problem
+Both documents mention ANTHROPIC_API_KEY and other provider keys but have no spec for where they are stored securely on disk. API keys stored in plain .env files or settings.json are a critical security vulnerability — any process with filesystem access (including a tool call gone wrong) can read them.
+
+13
+ Two CVEs in the past year proved that a cloned repo is all it takes to exfiltrate API keys or execute code before a trust dialog even appears. This means key storage security is not theoretical — it is an active attack surface.
+M.2 Storage Strategy
+TypeScript
+
+// packages/core/src/security/KeyStorage.ts
+
+// Priority order for key resolution:
+// 1. OS Keychain (most secure — never touches disk in plaintext)
+// 2. Encrypted SQLite column (AES-256-GCM, encryption key from OS Keychain)
+// 3. Environment variable (least secure — only for CI/headless)
+// 4. Prompt user (interactive fallback)
+
+export class KeyStorage {
+
+  // OS Keychain: uses Tauri's `keyring` plugin on desktop,
+  // or the `keytar` npm package in terminal mode
+  async saveToKeychain(providerId: string, apiKey: string): Promise<void> {
+    await keyring.setPassword('locoworker', providerId, apiKey)
+
+    // Store only hint in DB (last 4 chars for UI display)
+    this.db.prepare(
+      `INSERT OR REPLACE INTO provider_credentials
+       (provider_id, encrypted_key, key_hint, created_at, last_used)
+       VALUES (?, ?, ?, ?, ?)`
+    ).run(providerId, '[keychain]', apiKey.slice(-4), Date.now(), null)
+  }
+
+  async get(providerId: string): Promise<string | null> {
+    // 1. Try OS keychain first
+    try {
+      const key = await keyring.getPassword('locoworker', providerId)
+      if (key) return key
+    } catch {}
+
+    // 2. Try environment variable
+    const envKey = process.env[`${providerId.toUpperCase()}_API_KEY`]
+    if (envKey) return envKey
+
+    // 3. Not found
+    return null
+  }
+
+  async delete(providerId: string): Promise<void> {
+    await keyring.deletePassword('locoworker', providerId)
+    this.db.prepare(`DELETE FROM provider_credentials WHERE provider_id = ?`)
+      .run(providerId)
+  }
+
+  listConfigured(): ProviderCredentialHint[] {
+    return this.db.prepare(
+      `SELECT provider_id, key_hint, created_at, last_used
+       FROM provider_credentials`
+    ).all() as ProviderCredentialHint[]
+  }
+}
+M.3 Key Rules (Non-Negotiable)
+text
+
+1. API keys MUST NEVER be written to:
+   - settings.json
+   - CLAUDE.md
+   - Any file in the project root
+   - Session transcripts
+   - Log files
+   - Git-tracked files
+
+2. API keys MUST be stored in OS Keychain when running as desktop app.
+
+3. API keys MAY be passed via environment variable in headless/CI mode only.
+
+4. The AnalyticsMetadata type-barrier pattern from Claude Code's codebase
+   MUST be adopted for any telemetry code: no string can be logged without
+   an explicit developer acknowledgement that it contains no keys or paths.
+16
+ To prevent the accidental collection of PII or proprietary source code, Claude Code employs a "type barrier" strategy, defining a unique TypeScript type: `AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS`. This type is defined as `never` or a branded string to force developers to acknowledge the data they are sending.
+Locoworker must adopt this exact pattern:
+
+TypeScript
+
+// packages/core/src/security/AnalyticsMetadata.ts
+
+// You CANNOT log a string as telemetry without explicitly casting it
+// to this type — which forces you to verify it contains no keys or paths.
+type AnalyticsMetadata_I_VERIFIED_THIS_CONTAINS_NO_KEYS_OR_PATHS = string & {
+  readonly __brand: unique symbol
+}
+
+export type SafeMetadata =
+  AnalyticsMetadata_I_VERIFIED_THIS_CONTAINS_NO_KEYS_OR_PATHS
+
+export function safeMetadata(
+  value: string
+): SafeMetadata {
+  // Reject if value looks like an API key
+  if (/^sk-[a-zA-Z0-9]{20,}/.test(value)) {
+    throw new Error('Attempted to log a value that looks like an API key')
+  }
+  // Reject if value looks like an absolute path
+  if (/^(\/|[A-Z]:\\)/.test(value)) {
+    throw new Error('Attempted to log a value that looks like a file path')
+  }
+  return value as SafeMetadata
+}
+SECTION N — Observability & OpenTelemetry
+N.1 Why This Is Essential
+12
+ Telemetry shows what the agent actually did — every tool call, every token, every dollar. Without built-in observability, users of Locoworker running local models have no way to:
+Know when a session is burning through context budget
+Debug why a tool call failed on Llama but worked on Claude
+Track which skills are most used
+Set cost alerts for API-based providers
+12
+ Claude Code ships with native OpenTelemetry support. Locoworker must do the same — but also work locally without any external service.
+N.2 What to Instrument
+Every significant event in the agent loop emits an OpenTelemetry span or metric:
+
+TypeScript
+
+// packages/core/src/observability/Telemetry.ts
+
+export interface TelemetryEvent {
+  // Session lifecycle
+  'session.start':    { sessionId: string; modelId: string; providerId: string }
+  'session.end':      { sessionId: string; turns: number; totalCostUsd: number; totalTokens: number }
+
+  // Turn lifecycle
+  'turn.start':       { sessionId: string; turnNumber: number }
+  'turn.end':         { sessionId: string; turnNumber: number; durationMs: number }
+
+  // Model calls
+  'llm.request':      { modelId: string; inputTokens: number; promptCacheHit: boolean }
+  'llm.response':     { modelId: string; outputTokens: number; stopReason: string; durationMs: number; costUsd: number }
+  'llm.error':        { modelId: string; errorType: string; retryCount: number }
+
+  // Tool calls
+  'tool.call':        { toolName: string; sessionId: string; turnNumber: number }
+  'tool.success':     { toolName: string; durationMs: number }
+  'tool.error':       { toolName: string; errorType: string }
+  'tool.blocked':     { toolName: string; reason: string }
+  'tool.degraded':    { toolName: string; failureMode: string; repairAttempted: boolean }
+
+  // Context
+  'context.usage':    { usedTokens: number; budgetTokens: number; usagePct: number }
+  'context.compact':  { type: 'micro' | 'auto' | 'full'; beforeTokens: number; afterTokens: number }
+
+  // Memory
+  'memory.save':      { category: string; projectHash: SafeMetadata }
+  'memory.search':    { resultCount: number; projectHash: SafeMetadata }
+
+  // File history
+  'snapshot.create':  { snapshotId: string; fileCount: number }
+  'snapshot.rewind':  { snapshotId: string; filesRestored: number }
+
+  // Skills
+  'skill.invoke':     { skillName: string }
+  'skill.complete':   { skillName: string; durationMs: number }
+}
+N.3 OpenTelemetry Setup
+TypeScript
+
+// packages/core/src/observability/OTelSetup.ts
+
+export function setupOpenTelemetry(config: OTelConfig): void {
+  if (!config.enabled) return
+
+  const provider = new NodeTracerProvider({
+    resource: new Resource({
+      [SemanticResourceAttributes.SERVICE_NAME]: 'locoworker',
+      [SemanticResourceAttributes.SERVICE_VERSION]: APP_VERSION,
+    })
+  })
+
+  // Always export to local NDJSON log (offline-first)
+  provider.addSpanProcessor(
+    new SimpleSpanProcessor(new FileExporter(`${LOCOWORKER_DIR}/logs/${dateStr()}.ndjson`))
+  )
+
+  // Optionally export to OTLP endpoint (user-configured)
+  if (config.otlpEndpoint) {
+    provider.addSpanProcessor(
+      new BatchSpanProcessor(
+        new OTLPTraceExporter({ url: config.otlpEndpoint })
+      )
+    )
+  }
+
+  provider.register()
+}
+N.4 Local Observability Dashboard
+For users who don't want external telemetry services, Locoworker ships a built-in /dashboard page accessible via a local HTTP server (on port 7474 by default). This shows:
+
+Session history with cost breakdown per session
+Tool usage frequency chart
+Context usage over time per session
+Model reliability stats (repair rate per model)
+Skill invocation history
+This is the "proportionate" observability approach — 
+12
+a single binary that runs local and queries with SQL, not a full Grafana stack.
+
+N.5 Privacy Controls
+16
+ A global killswitch — the `CLAUDE_CODE_TELEMETRY` environment variable — can disable all outgoing telemetry. Privacy levels dictate what data can be sent. A cleanup period setting determines how long transcripts are kept locally.
+Locoworker mirrors this:
+
+TypeScript
+
+// packages/core/src/observability/PrivacyControls.ts
+
+export interface TelemetryPrivacyConfig {
+  enabled: boolean               // Master switch
+  localLogging: boolean          // Always on by default (local NDJSON only)
+  otlpExport: boolean            // Off by default — user must opt in
+  logPromptContent: boolean      // Off by default — only metadata
+  retentionDays: number          // default: 30; 0 = delete on session end
+  noSessionPersistence: boolean  // --no-persist flag: no disk writes at all
+}
+SECTION O — Testing Strategy
+O.1 Why Agent Testing Is Different
+23
+ Testing LLM applications requires a different approach than traditional software testing. Instead of checking exact output matches, you use evaluation functions that score outputs on continuous scales.
+LLM outputs are non-deterministic. A test that checks response === "I'll use read_file" will be flaky. Instead, Locoworker's test strategy has three distinct layers.
+
+O.2 Three-Layer Test Strategy
+Layer 1 — Deterministic Unit Tests (run on every commit, no LLM calls)
+These test everything except the model itself:
+
+TypeScript
+
+// packages/core/src/__tests__/unit/
+
+// ToolCallReliabilityLayer tests — fully deterministic
+describe('DetectionEngine', () => {
+  it('detects malformed JSON', () => {
+    const engine = new DetectionEngine()
+    const result = engine.detect('{"name": "read_file", "input": {"path": "/foo"', registry)
+    expect(result.failureMode).toBe('truncated_output')
+  })
+
+  it('detects prose-embedded tool calls', () => {
+    const result = engine.detect(
+      `I'll use the read_file tool: {"name": "read_file", "input": {"path": "/foo"}}`,
+      registry
+    )
+    expect(result.failureMode).toBe('extra_prose')
+  })
+})
+
+// RepairEngine tests — fully deterministic
+describe('RepairEngine', () => {
+  it('closes open braces', async () => {
+    const engine = new RepairEngine()
+    const result = await engine.repair(
+      { raw: '{"name": "read_file", "input": {"path": "/foo"', failureMode: 'truncated_output' },
+      toolDef, 0
+    )
+    expect(result).toMatchObject({ name: 'read_file', input: { path: '/foo' } })
+  })
+})
+
+// ContextBudgetDetector tests — mock Ollama API
+describe('ContextBudgetDetector', () => {
+  it('parses num_ctx from Ollama modelfile', async () => {
+    mockFetch({ modelfile: 'FROM llama3.1\nPARAMETER num_ctx 8192' })
+    const profile = await detector.detect(ollamaProvider, 'llama3.1:8b')
+    expect(profile.hardLimit).toBe(8192)
+    expect(profile.safeLimit).toBe(7372)
+  })
+})
+
+// FileHistoryManager tests — real filesystem, temp dir
+describe('FileHistoryManager', () => {
+  it('snapshots and restores a file', async () => {
+    const manager = new FileHistoryManager(testSessionId)
+    writeFileSync(tmpFile, 'original content')
+    await manager.snapshot([tmpFile], 1, 'write_file')
+    writeFileSync(tmpFile, 'changed content')
+    await manager.rewindToTurn(1)
+    expect(readFileSync(tmpFile, 'utf-8')).toBe('original content')
+  })
+})
+
+// HooksRegistry tests — mock hook functions
+describe('HooksRegistry', () => {
+  it('blocks execution when a blocking hook returns block', async () => {
+    registry.register('pre_tool_call', {
+      name: 'test-block',
+      fn: async () => ({ action: 'block', reason: 'test' }),
+      blocking: true, timeout: 1000
+    })
+    const result = await registry.fire('pre_tool_call', mockCtx)
+    expect(result.blocked).toBe(true)
+    expect(result.blockReason).toBe('test')
+  })
+})
+Layer 2 — Integration Tests with Mock LLM (run on every commit, no real API calls)
+These test the full agent loop using a mock LLM that returns pre-scripted responses:
+
+TypeScript
+
+// packages/core/src/__tests__/integration/
+
+export class MockLLM implements ProviderAdapter {
+  private responses: ModelResponse[]
+  private callIndex = 0
+
+  constructor(responses: ModelResponse[]) {
+    this.responses = responses
+  }
+
+  async call(request: ModelRequest): Promise<ModelResponse> {
+    return this.responses[this.callIndex++]
+  }
+}
+
+describe('QueryLoop Integration', () => {
+  it('completes a single tool call end-to-end', async () => {
+    const mockLLM = new MockLLM([
+      // Turn 1: model calls read_file
+      { content: [{ type: 'tool_use', name: 'read_file', id: 'tu_1',
+                    input: { path: '/tmp/test.txt' } }], stop_reason: 'tool_use' },
+      // Turn 2: model uses result and ends
+      { content: [{ type: 'text', text: 'The file contains: hello world' }],
+        stop_reason: 'end_turn' }
+    ])
+
+    writeFileSync('/tmp/test.txt', 'hello world')
+    const result = await queryLoop({ userMessage: 'Read /tmp/test.txt', llm: mockLLM, ... })
+
+    expect(result.finalText).toContain('hello world')
+    expect(result.toolCallCount).toBe(1)
+  })
+
+  it('handles tool call repair gracefully', async () => {
+    const mockLLM = new MockLLM([
+      // Malformed tool call (missing closing brace)
+      { content: [{ type: 'text',
+          text: '{"name": "read_file", "input": {"path": "/tmp/test.txt"' }],
+        stop_reason: 'end_turn' },
+      // After repair re-prompt, valid response
+      { content: [{ type: 'tool_use', name: 'read_file', id: 'tu_1',
+                    input: { path: '/tmp/test.txt' } }], stop_reason: 'tool_use' },
+      { content: [{ type: 'text', text: 'File read.' }], stop_reason: 'end_turn' }
+    ])
+
+    const result = await queryLoop({ userMessage: 'Read /tmp/test.txt', llm: mockLLM,
+                                     modelId: 'ollama/llama3.1:8b', ... })
+    expect(result.toolCallCount).toBe(1)
+    expect(result.repairCount).toBe(1)
+  })
+})
+Layer 3 — LLM Evaluation Tests (run on PR + nightly, real API calls, cost-gated)
+30
+ Use cheap code-based graders in CI for every commit. Reserve expensive LLM-as-judge evaluations for preview/production evaluation.
+TypeScript
+
+// packages/core/src/__tests__/eval/
+
+// These tests run against a real model (cheapest available: Haiku or Llama 3.2:3b)
+// They use SCORED evaluation, not exact-match assertions
+
+describe('Agent Eval Suite', () => {
+
+  // Eval: can the agent read and summarize a file?
+  eval('file_read_summary', {
+    prompt: 'Read packages/core/src/agent/queryLoop.ts and describe what it does in one sentence.',
+    model: 'claude-3-5-haiku-20241022',
+    graders: [
+      toolCallGrader({ expects: 'read_file', minCalls: 1 }),
+      contentGrader({ mustContain: ['loop', 'tool', 'agent'], threshold: 0.8 })
+    ],
+    passThreshold: 0.85
+  })
+
+  // Eval: does reliability layer work on Ollama?
+  eval('ollama_tool_reliability', {
+    prompt: 'List the files in the current directory.',
+    model: 'llama3.1:8b',          // Real Ollama call
+    provider: 'ollama',
+    graders: [
+      toolCallGrader({ expects: 'list_directory', minCalls: 1 }),
+      completionGrader({ mustComplete: true })
+    ],
+    passThreshold: 0.80             // Lower bar for local model
+  })
+
+  // Eval: does compaction preserve key information?
+  eval('compaction_preservation', {
+    prompt: '...',                   // Long multi-turn session that triggers compaction
+    model: 'claude-3-5-haiku-20241022',
+    graders: [
+      memoryGrader({ mustRemember: ['user preference: TypeScript', 'file path: src/index.ts'] })
+    ],
+    passThreshold: 0.90
+  })
+})
+O.3 Test Configuration
+jsonc
+
+// package.json (root)
+{
+  "scripts": {
+    "test":        "vitest run packages/*/src/__tests__/unit",
+    "test:int":    "vitest run packages/*/src/__tests__/integration",
+    "test:eval":   "vitest run packages/*/src/__tests__/eval --reporter=eval",
+    "test:all":    "pnpm test && pnpm test:int",
+    "test:ci":     "pnpm test:all --coverage"
+  }
+}
+SECTION P — Build System & CI/CD Pipeline
+P.1 Monorepo Tooling
+4
+ Turborepo is a powerful tool that simplifies the management of monorepos, making it easy to share code between projects and manage dependencies.
+text
+
+Monorepo manager:    pnpm workspaces + Turborepo
+TypeScript:          tsc with project references
+Bundler (packages):  tsup (ESM + CJS dual output)
+Bundler (desktop):   Vite (inside Tauri)
+Bundler (terminal):  tsup
+Linter:              ESLint + @typescript-eslint
+Formatter:           Prettier
+Test runner:         Vitest
+jsonc
+
+// turbo.json
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "__tests__/**"]
+    },
+    "test:eval": {
+      "dependsOn": ["^build"],
+      "env": ["ANTHROPIC_API_KEY", "OLLAMA_BASE_URL"]
+    },
+    "lint": { "dependsOn": [] },
+    "typecheck": { "dependsOn": ["^build"] }
+  }
+}
+P.2 CI/CD Pipeline (GitHub Actions)
+YAML
+
+# .github/workflows/ci.yml
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+
+jobs:
+  # ── Job 1: Unit + Integration tests (every commit, no LLM) ──────────
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo typecheck lint
+      - run: pnpm turbo test test:int
+      - uses: codecov/codecov-action@v4
+
+  # ── Job 2: Desktop build matrix (macOS + Windows + Linux) ───────────
+  build-desktop:
+    needs: test-unit
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build --filter=@locoworker/desktop
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: packages/desktop
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+
+  # ── Job 3: LLM Eval tests (PR + nightly, real API, cost-gated) ──────
+  eval:
+    needs: test-unit
+    if: github.event_name == 'pull_request' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm turbo build
+      - run: pnpm test:eval
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          EVAL_COST_LIMIT_USD: "1.00"   # Hard cap on eval spend per run
+      - name: Upload eval report
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: eval-results/
+P.3 Release Pipeline
+YAML
+
+# .github/workflows/release.yml
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    strategy:
+      matrix:
+        platform: [ubuntu-22.04, macos-latest, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - uses: tauri-apps/tauri-action@v0
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Locoworker ${{ github.ref_name }}'
+          releaseBody: 'See CHANGELOG.md for release notes.'
+          releaseDraft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+SECTION Q — Distribution, Installer & Auto-Update
+Q.1 What Tauri Ships
+6
+ Tauri has a built-in app bundler to create app bundles in formats like `.app`, `.dmg`, `.deb`, `.rpm`, `.AppImage` and Windows installers like `.exe` (via NSIS) and `.msi` (via WiX).
+This covers all three desktop platforms out of the box. Locoworker needs three additional things on top of standard bundling:
+
+Q.2 Auto-Update Configuration
+jsonc
+
+// packages/desktop/src-tauri/tauri.conf.json
+
+{
+  "plugins": {
+    "updater": {
+      "active": true,
+      "endpoints": [
+        "https://releases.locoworker.dev/{{target}}/{{arch}}/{{current_version}}"
+      ],
+      "dialog": true,
+      "pubkey": "{{ TAURI_PUBLIC_KEY }}"
+    }
+  }
+}
+Update check logic in the frontend:
+
+TypeScript
+
+// packages/desktop/src/updater/AutoUpdater.ts
+
+export async function checkForUpdates(): Promise<void> {
+  try {
+    const update = await check()
+    if (update?.available) {
+      // Non-blocking notification in the UI
+      notify({
+        type: 'update_available',
+        version: update.version,
+        body: update.body,
+        onInstall: () => update.downloadAndInstall()
+      })
+    }
+  } catch (err) {
+    // Update check failure must never crash the app
+    console.warn('Update check failed:', err)
+  }
+}
+
+// Run on startup (non-blocking)
+checkForUpdates()
+
+// Re-check every 6 hours
+setInterval(checkForUpdates, 6 * 60 * 60 * 1000)
+Q.3 Bundled Runtime Dependencies
+The installer must include or detect:
+
+TypeScript
+
+// packages/desktop/src-tauri/src/setup.rs
+
+// On first launch, verify required system dependencies exist:
+// - Node.js / Bun (for agent runtime, if not embedded)
+// - Ollama (optional — show install prompt if not found)
+// - Git (required for git tool)
+
+async fn verify_dependencies() -> SetupResult {
+    let mut missing = vec![];
+
+    if which("node").is_err() && which("bun").is_err() {
+        missing.push(Dependency::NodeOrBun)
+    }
+
+    if which("git").is_err() {
+        missing.push(Dependency::Git)
+    }
+
+    // Ollama is optional — prompt but don't block
+    let ollama_available = reqwest::get("http://localhost:11434/api/version")
+        .await.is_ok();
+
+    SetupResult { missing, ollama_available }
+}
+Q.4 First-Run / Onboarding Experience
+This is the final missing section — and it determines whether a developer can go from download to first successful agent session in under 5 minutes.
+
+TypeScript
+
+// packages/desktop/src/onboarding/OnboardingFlow.ts
+
+// Step 1: Welcome screen (skip if already configured)
+// Step 2: Provider setup
+//   - Option A: Enter Anthropic API key → saved to OS Keychain
+//   - Option B: Use Ollama local → detect running instance or show install link
+//   - Option C: Enter OpenAI-compatible URL + key (OpenRouter, LM Studio, etc.)
+// Step 3: Project setup
+//   - Open existing project directory
+//   - Or start in ~/locoworker-projects/default
+// Step 4: First-session orientation
+//   - Show slash commands reference card
+//   - Run a simple demo: "/skill explain-codebase" on the locoworker repo itself
+// Step 5: Done — launch normal session
+
+export const ONBOARDING_STEPS: OnboardingStep[] = [
+  {
+    id: 'welcome',
+    title: 'Welcome to Locoworker',
+    description: 'An open agent harness for any model, any codebase.',
+    skipIf: () => hasCompletedOnboarding()
+  },
+  {
+    id: 'provider',
+    title: 'Connect a Model',
+    component: ProviderSetupStep,
+    required: true
+  },
+  {
+    id: 'project',
+    title: 'Open a Project',
+    component: ProjectSetupStep,
+    required: true
+  },
+  {
+    id: 'orientation',
+    title: 'Quick Tour',
+    component: OrientationStep,
+    required: false
+  }
+]
+Final Completeness Scorecard
+Section	Before Addendum	After Addendum	After Section L-Q
+Agent loop + tools	✅	✅	✅
+Provider routing + BYOK	✅	✅	✅
+Tool reliability (local LLMs)	❌	✅	✅
+Context budget (per hardware)	❌	✅	✅
+Model capability registry	❌	✅	✅
+Hooks system	❌	✅	✅
+File history / rewind	❌	✅	✅
+MCP transport (Streamable HTTP)	❌	✅	✅
+Skills / routines	❌	✅	✅
+Harness philosophy	❌	✅	✅
+Competitive differentiation	❌	✅	✅
+Phase reordering	❌	✅	✅
+Persistence / database	❌	❌	✅
+Secure key storage	❌	❌	✅
+Observability / OpenTelemetry	❌	❌	✅
+Testing strategy	❌	❌	✅
+Build system / CI/CD	❌	❌	✅
+Distribution / auto-update	❌	❌	✅
+First-run onboarding	❌	❌	✅
+
+
+
+
+The other missing documents are:
+
+Document	Purpose
+CONTRIBUTING.md	How developers contribute — conventions, tags, eval policy
+ARCHITECTURE.md	High-level map so any contributor understands the whole system
+CLAUDE.md	The repo's own CLAUDE.md — so Locoworker can build itself
+DEVELOPMENT.md	Local dev environment setup from zero
+SECURITY.md	Vulnerability reporting + key storage rules
+settings.schema.json	Complete, validated settings schema
+Section R — Dashboard & UX Spec	Full non-technical-friendly UI specification
+CONTRIBUTING.md
+Markdown
+
+# Contributing to Locoworker
+
+Welcome. This document explains how to contribute effectively to Locoworker —
+an open-source agent harness for any model, any codebase.
+
+Before writing code, read the Harness Philosophy in `docs/addendum.md` Section A.
+Every contribution is evaluated against one question:
+
+> "Does this feature expose the model's power — or does it wrap and limit it?"
+
+---
+
+## Table of Contents
+
+1. [Quick Start for Contributors](#quick-start)
+2. [Code Conventions](#code-conventions)
+3. [The MODEL_COMPENSATION Tag](#model-compensation-tag)
+4. [Feature Classification System](#feature-classification)
+5. [Testing Requirements](#testing-requirements)
+6. [Eval Test Cost Policy](#eval-cost-policy)
+7. [Pull Request Process](#pull-request-process)
+8. [Security Contributions](#security-contributions)
+9. [Adding a New Provider](#adding-a-new-provider)
+10. [Adding a New Tool](#adding-a-new-tool)
+11. [Adding a Built-In Skill](#adding-a-built-in-skill)
+12. [Adding a Built-In Hook](#adding-a-built-in-hook)
+13. [Updating the ModelCapabilityRegistry](#updating-model-registry)
+
+---
+
+## Quick Start
+
+```bash
+# 1. Fork and clone
+git clone https://github.com/YOUR_USERNAME/locoworker
+cd locoworker
+
+# 2. Install dependencies
+pnpm install
+
+# 3. Build all packages
+pnpm turbo build
+
+# 4. Run unit + integration tests (no API keys needed)
+pnpm test && pnpm test:int
+
+# 5. Start desktop app in dev mode
+pnpm --filter @locoworker/desktop tauri dev
+
+# 6. Start terminal UI in dev mode
+pnpm --filter @locoworker/terminal dev
+See DEVELOPMENT.md for full environment setup including Ollama, Rust, and platform-specific requirements.
+
+Code Conventions
+TypeScript
+Strict mode always on ("strict": true in all tsconfig.json files)
+No any — use unknown and narrow properly
+Explicit return types on all exported functions
+Prefer interface over type for object shapes
+Prefer named exports over default exports in packages/core
+File naming
+PascalCase.ts for classes
+camelCase.ts for modules/utilities
+kebab-case.ts for hooks and skills
+kebab-case.test.ts for unit tests
+kebab-case.eval.ts for LLM evaluation tests
+Imports
+Use path aliases: @locoworker/core, @locoworker/desktop, etc.
+No circular imports between packages
+packages/core must never import from packages/desktop
+Comments
+All public APIs must have JSDoc comments
+Inline comments explain why, not what
+Two special annotation types are mandatory (see below)
+The MODEL_COMPENSATION Tag
+Any code that exists to work around a model limitation — rather than to implement product logic — MUST be tagged with a // MODEL_COMPENSATION: comment.
+
+Format
+TypeScript
+
+// MODEL_COMPENSATION: <model/version that has this limitation>
+// Re-evaluate: <condition under which this code can be deleted>
+// Tracking: <link to issue>
+Example
+TypeScript
+
+// MODEL_COMPENSATION: Llama 3.1 8B and Mistral 7B frequently omit the closing
+// brace when generating tool call JSON inside their chat template.
+// Re-evaluate: when Ollama's default model becomes Llama 3.2+ and Mistral-Small-3.1+
+// Tracking: https://github.com/knarayanareddy/locoworker/issues/XXX
+function closeOpenBraces(raw: string): string {
+  let depth = 0
+  for (const ch of raw) {
+    if (ch === '{') depth++
+    if (ch === '}') depth--
+  }
+  return raw + '}'.repeat(Math.max(0, depth))
+}
+Quarterly Audit
+On the first Monday of every quarter, a maintainer runs:
+
+Bash
+
+pnpm run audit:model-compensation
+This script finds all MODEL_COMPENSATION tags and outputs a report. Any tag whose "Re-evaluate" condition is now true must be removed in a PR within 30 days. Keeping dead compensations makes the codebase progressively harder to reason about.
+
+Feature Classification System
+Every new feature added to the product backlog or implemented in a PR must be tagged with one of three classifications in both the PR description and in the code via a file-level comment:
+
+text
+
+@feature-class EXPOSE
+Class	Definition	Default approval
+EXPOSE	Directly increases what the model can do or see	✅ Auto-approved for review
+SURFACE	Presents model output or state without interpreting it	✅ Auto-approved for review
+SCAFFOLD	Adds logic between user intent and model action	⚠️ Requires explicit justification
+SCAFFOLD features require a justification block in the PR:
+Markdown
+
+## SCAFFOLD Justification
+
+**Feature:** AutoDream memory consolidation
+**Why SCAFFOLD:** This runs an LLM call to consolidate memory without user
+  initiation — it interprets what the model produced rather than exposing it.
+**Why it belongs anyway:** Memory index grows unbounded without periodic pruning.
+  The alternative (no pruning) degrades performance more than the consolidation
+  logic adds scaffolding.
+**Opt-in by default:** Yes — disabled unless user enables `memory.autoDream: true`
+**Deletion condition:** If models develop reliable self-pruning memory in their
+  context, this entire feature can be removed.
+Any SCAFFOLD feature that cannot produce this justification should not be merged.
+
+Testing Requirements
+All PRs must pass the following gates before merge:
+
+Gate 1: Unit tests (required, blocking)
+Bash
+
+pnpm test
+New code must have unit tests covering all public APIs
+Minimum coverage: 80% line coverage for new files
+Reliability layer changes: 95% coverage required
+Gate 2: Integration tests (required, blocking)
+Bash
+
+pnpm test:int
+No real API calls
+Uses MockLLM from packages/core/src/__tests__/mocks/MockLLM.ts
+Tests the full agent loop with your changes included
+Gate 3: Type checking (required, blocking)
+Bash
+
+pnpm turbo typecheck
+Zero TypeScript errors across all packages
+No @ts-ignore without a comment explaining why
+Gate 4: Eval tests (required for agent loop changes, non-blocking on PRs)
+Bash
+
+pnpm test:eval
+Runs against real APIs using a capped budget (see Eval Cost Policy below)
+Results are posted as a PR comment by the CI bot
+A regression in eval scores below the threshold will flag the PR for review but does not auto-block merge — a maintainer makes the final call
+Gate 5: Linting (required, blocking)
+Bash
+
+pnpm turbo lint
+Zero ESLint errors
+Prettier formatting applied
+Eval Test Cost Policy
+Eval tests make real API calls to Anthropic and/or local Ollama. These have cost. The following rules apply to keep costs sustainable for contributors and maintainers.
+
+Budget caps
+Per eval run: $1.00 USD hard cap (enforced in packages/core/src/eval/CostGate.ts)
+Per contributor per month: $10.00 USD (tracked by GitHub Actions secret rotation)
+Per nightly run: $5.00 USD
+Model selection for evals
+Unit evals: claude-3-5-haiku-20241022 (cheapest, fastest)
+Regression evals on main: claude-3-5-sonnet-20241022
+Local model evals: llama3.2:3b via Ollama (free, fastest local)
+Do NOT write evals that use claude-3-opus — cost-prohibited
+Writing cost-efficient evals
+Evals must set max_tokens: 1024 unless the task genuinely requires more
+Use temperature: 0 for deterministic grading where possible
+Batch multiple assertions per LLM call using the MultiGrader class
+Mock the LLM in unit/integration tests — evals are for behavioral validation only
+Running evals locally
+Bash
+
+# Requires ANTHROPIC_API_KEY env var
+pnpm test:eval --filter=packages/core
+
+# Run only Ollama evals (free)
+pnpm test:eval --filter=packages/core -- --grep "ollama"
+
+# Dry run: shows what would be called, estimates cost, doesn't execute
+pnpm test:eval --dry-run
+Pull Request Process
+PR title format
+text
+
+[TYPE] Short description
+
+Types: feat | fix | refactor | test | docs | perf | security | chore
+PR description template
+Markdown
+
+## Summary
+<!-- What does this PR do? 2-3 sentences. -->
+
+## Feature Classification
+<!-- @feature-class EXPOSE | SURFACE | SCAFFOLD -->
+<!-- If SCAFFOLD, include justification block (see CONTRIBUTING.md) -->
+
+## Model Compensation
+<!-- Does this PR add any MODEL_COMPENSATION tags? List them. -->
+<!-- Does this PR remove any MODEL_COMPENSATION tags? Why are they now unnecessary? -->
+
+## Testing
+- [ ] Unit tests added/updated
+- [ ] Integration tests added/updated
+- [ ] Eval tests added/updated (if agent loop change)
+- [ ] `pnpm test && pnpm test:int` passes locally
+- [ ] `pnpm turbo typecheck lint` passes locally
+
+## Documentation
+- [ ] JSDoc updated for changed public APIs
+- [ ] ARCHITECTURE.md updated if new package or major new component
+- [ ] CHANGELOG.md entry added
+
+## Screenshots / Videos
+<!-- For any UI change, include before/after screenshots or a screen recording -->
+Review requirements
+All PRs require at least 1 approving review from a maintainer
+Security-related PRs (packages/core/src/security/, key storage, permissions) require 2 approving reviews
+No force-pushes to main or develop
+Security Contributions
+If you find a security vulnerability, do not open a public GitHub issue.
+
+Report via: security@locoworker.dev (or GitHub Security Advisories)
+
+Include:
+
+Description of the vulnerability
+Steps to reproduce
+Potential impact
+Suggested fix (optional)
+See SECURITY.md for full disclosure policy and response timeline.
+
+Security-sensitive areas
+Any PR touching these areas requires extra scrutiny:
+
+packages/core/src/security/ — key storage, type barriers
+packages/core/src/tools/definitions/bash.ts — shell execution
+packages/core/src/permissions/ — permission gates
+packages/core/src/mcp/ — MCP transport layer
+packages/desktop/src-tauri/ — Rust/Tauri layer
+Adding a New Provider
+Create packages/core/src/providers/<provider-name>/index.ts
+Implement the ProviderAdapter interface
+Add entries to ModelCapabilityRegistry for the provider's models
+Add a reliability profile in reliabilityProfiles.ts
+Add the provider to ProviderRouter.ts
+Write unit tests for the adapter (mock HTTP responses)
+Write one eval test that sends a real hello-world prompt
+Document the provider in docs/providers/<provider-name>.md
+Update ARCHITECTURE.md providers table
+Adding a New Tool
+Create packages/core/src/tools/definitions/<tool-name>.ts
+Export a ToolDefinition object with:
+name, description, inputSchema (JSON Schema)
+permissionLevel: read | write | execute | network
+execute(input, session) function
+JSDoc with examples
+Register in packages/core/src/tools/ToolRegistry.ts
+Add to the built-in tools list in packages/core/src/tools/index.ts
+Write unit tests (tool execution, schema validation, error cases)
+Write integration tests (tool called via MockLLM loop)
+If the tool modifies files or runs commands, ensure the pre-tool hook chain fires correctly (see ToolExecutor.ts)
+Add tool documentation to docs/tools/<tool-name>.md
+Adding a Built-In Skill
+Create .locoworker/skills/built-in/<skill-name>.skill.yaml
+Follow the skill YAML schema in packages/core/src/skills/types.ts
+Test the skill with:
+Bash
+
+pnpm run skill:test <skill-name>
+Write a Vitest integration test using MockLLM
+Add an eval test that runs the skill against a real small model
+Document in docs/skills/<skill-name>.md
+Adding a Built-In Hook
+Create packages/core/src/hooks/built-in/<hook-name>.ts
+Export: default function, blocking: boolean, timeout: number
+Annotate with @hookEvent <event-name> JSDoc tag
+Write unit tests — hooks must be deterministic
+Register in packages/core/src/hooks/HooksRegistry.ts default loader
+Document in docs/hooks/<hook-name>.md
+Updating the ModelCapabilityRegistry
+When a new model is released or an existing model's capabilities change:
+
+Update packages/core/src/registry/builtInCapabilities.ts
+If tool calling capability changed, update the reliability profile in packages/core/src/reliability/profiles.ts
+If context window changed, update KNOWN_CONTEXT_WINDOWS in packages/core/src/context/ContextBudgetDetector.ts
+Add a changelog entry under the [registry] category
+If removing a MODEL_COMPENSATION tag is now justified, do it in the same PR and reference the registry update as the reason
+Code of Conduct
+Be excellent to each other. We are building tools, not building identity. Technical disagreements are resolved by:
+
+Testing the claim
+Measuring the outcome
+Defaulting to the simpler implementation if outcomes are equivalent
+text
+
+
+---
+
+---
+
+# ARCHITECTURE.md
+
+```markdown
+# Locoworker Architecture
+
+This document is the single-page map of the entire codebase. Read this before
+reading any other document. It tells you what exists, where it lives, and how
+the pieces connect.
+
+---
+
+## The One-Line Description
+
+Locoworker is an open agent harness: a thin, safe, extensible loop between a
+user, a language model, and the tools the model needs to act on the world.
+
+---
+
+## Repository Layout
+locoworker/ ├── packages/ │ ├── core/ The agent engine. No UI. No platform assumptions. │ ├── desktop/ Tauri + React desktop app. Depends on core. │ ├── terminal/ Ink terminal UI. Depends on core. │ ├── wiki/ LLMWiki MCP server integration. Depends on core. │ ├── graphify/ Graphify MCP server integration. Depends on core. │ ├── research/ AutoResearch loop. Depends on core. │ └── gateway/ Messaging gateway (Telegram/Discord). Depends on core. ├── docs/ All design and architecture documents └── .locoworker/ Project-level config for the locoworker repo itself
+
+text
+
+
+**Dependency rule:** `packages/core` has zero UI dependencies.
+All other packages depend on `core`. No package other than `core` is imported
+by `core`. This is enforced by ESLint `import/no-restricted-paths`.
+
+---
+
+## The Agent Loop (Core)
+
+The central runtime path for every user request:
+User prompt │ ▼ SessionManager Creates or resumes a session. Detects context budget. │ ▼ SystemPromptBuilder Assembles static + project + dynamic system prompt blocks. │ ▼ QueryLoop The main while-loop. Runs until end_turn or max turns. │ ├──▶ CapabilityAwareRouter Strips unsupported features per model capability. │ ├──▶ QueryEngine Makes the API call. Streams tokens to UI. │ │ │ └──▶ ToolCallReliabilityLayer Detects/repairs malformed tool calls. │ ├──▶ PermissionGate Checks permission mode. Prompts user if needed. │ ├──▶ HooksRegistry Fires pre_tool_call hooks. Blocks if needed. │ ├──▶ ToolExecutor Runs the tool. Returns result. │ │ │ └──▶ HooksRegistry Fires post_tool_call hooks. │ ├──▶ AdaptiveCompactor Checks context budget. Compacts if threshold hit. │ └──▶ CostTracker Records token usage and cost.
+
+Result │ ▼ Event stream → Surface (Desktop UI / Terminal / Gateway)
+
+text
+
+
+---
+
+## Package: core
+
+### Key directories
+
+| Path | Responsibility |
+|---|---|
+| `src/agent/` | QueryLoop, QueryEngine, CostTracker |
+| `src/context/` | ContextBudgetProfile, AdaptiveCompactor, TokenCounter |
+| `src/tools/` | ToolRegistry, ToolExecutor, tool definitions |
+| `src/reliability/` | ToolCallReliabilityLayer and all sub-engines |
+| `src/registry/` | ModelCapabilityRegistry, built-in capabilities |
+| `src/hooks/` | HooksRegistry, built-in hooks, hook context types |
+| `src/history/` | FileHistoryManager, snapshot/rewind logic |
+| `src/skills/` | SkillManager, SkillRegistry, skill YAML parser |
+| `src/mcp/` | MCPClient, transport layer (Streamable HTTP + SSE + stdio) |
+| `src/permissions/` | PermissionGate, permission modes |
+| `src/providers/` | ProviderRouter, provider adapters |
+| `src/security/` | KeyStorage, AnalyticsMetadata type barrier |
+| `src/persistence/` | SQLite repositories (sessions, memory, cost) |
+| `src/observability/` | OpenTelemetry setup, telemetry event types |
+| `src/session/` | SessionManager |
+| `src/commands/` | Slash command implementations (/rewind, /compact, etc.) |
+
+---
+
+## Package: desktop
+
+A Tauri application (Rust backend + React frontend).
+
+### Architecture within desktop
+packages/desktop/ ├── src/ React frontend │ ├── components/ UI components (see Section R - Dashboard Spec) │ ├── stores/ Zustand state stores │ ├── ipc/ Tauri IPC wrappers (invoke, listen) │ ├── onboarding/ First-run flow │ └── updater/ Auto-update logic └── src-tauri/ Rust backend ├── src/ │ ├── main.rs App entry point │ ├── commands.rs Tauri commands (IPC handlers) │ ├── setup.rs Dependency verification on first run │ └── keychain.rs OS keychain integration └── tauri.conf.json App configuration, permissions, updater
+
+text
+
+
+The Rust layer is intentionally thin. It handles:
+- OS keychain access (cannot be done from Node.js in Tauri)
+- Native file system dialogs
+- Auto-updater lifecycle
+- App tray icon and menu
+
+The agent runtime runs as a **local Node.js/Bun process** spawned by Tauri.
+Tauri communicates with it via local HTTP + SSE (not IPC) so the same runtime
+can also be used by the terminal UI.
+
+---
+
+## Package: terminal
+
+An Ink (React for terminals) application. Shares the same local runtime as
+the desktop app. Can run independently without Tauri installed.
+
+---
+
+## Data Flow
+
+### How a user message becomes a tool result
+User types message in Desktop Chat panel
+React component calls ipc.invoke('send_message', { sessionId, content })
+Tauri command forwards to local agent runtime HTTP server
+Runtime: SessionManager resolves session → QueryLoop begins
+QueryLoop calls QueryEngine → streams tokens back as SSE events
+Desktop listens on ipc.listen('agent_events') → renders tokens in real time
+Model emits tool_use block → ToolCallReliabilityLayer validates
+PermissionGate checks permission → if needs approval, emits permission_request event
+Desktop shows PermissionDialog → user approves
+HooksRegistry fires pre_tool_call hooks
+ToolExecutor runs tool (e.g., write_file)
+FileHistoryManager snapshots affected files first
+File is written
+HooksRegistry fires post_tool_call hooks (e.g., lint-on-write)
+Tool result injected into history
+QueryLoop continues → model reads result → responds
+Final text streamed to Desktop → conversation complete
+text
+
+
+---
+
+## Providers
+
+| Provider | Transport | Tool Calling | Local |
+|---|---|---|---|
+| Anthropic | HTTPS | Native parallel | No |
+| OpenAI | HTTPS | Native parallel | No |
+| Ollama | HTTP (local) | Via OpenAI shim | Yes |
+| LM Studio | HTTP (local) | Via OpenAI shim | Yes |
+| OpenRouter | HTTPS | Via OpenAI shim | No |
+| AWS Bedrock | HTTPS | Native (via SDK) | No |
+| Custom BYOK | HTTPS | Via OpenAI shim | No |
+
+---
+
+## Storage
+
+| Data type | Location | Format |
+|---|---|---|
+| Sessions, messages, memory, cost | `~/.locoworker/locoworker.db` | SQLite |
+| File snapshots (blobs) | `~/.locoworker/file-history/<sessionId>/` | Raw files |
+| Telemetry logs | `~/.locoworker/logs/<date>.ndjson` | NDJSON |
+| Memory markdown | `~/.locoworker/memory/<projectHash>/` | Markdown |
+| API keys | OS Keychain | Encrypted |
+| Project settings | `<projectRoot>/.locoworker/settings.json` | JSON |
+| Project context | `<projectRoot>/.locoworker/CLAUDE.md` | Markdown |
+| Wiki | `<projectRoot>/.locoworker/wiki/` | Markdown + JSON |
+| Graph | `<projectRoot>/.locoworker/graph/` | Markdown + JSON |
+
+---
+
+## Security Boundaries
+┌─────────────────────────────────────────────────────────────────┐ │ TRUSTED ZONE │ │ - Agent runtime process │ │ - Tauri Rust backend │ │ - OS Keychain │ └─────────────────────────────────────────────────────────────────┘ │ Permission Gate enforced between zones ┌─────────────────────────────────────────────────────────────────┐ │ SEMI-TRUSTED ZONE │ │ - File system (project root only, unless user grants broader) │ │ - Bash (gated, sandboxed, blocklisted) │ │ - MCP servers (local process or user-configured HTTP) │ └─────────────────────────────────────────────────────────────────┘ │ Permission Gate enforced between zones ┌─────────────────────────────────────────────────────────────────┐ │ UNTRUSTED ZONE │ │ - File contents (may contain prompt injection) │ │ - Web fetch results (may contain prompt injection) │ │ - Tool outputs from external MCP servers │ └─────────────────────────────────────────────────────────────────┘
+
+text
+
+
+Content from the Untrusted Zone is sanitized before being used in compaction
+summaries (to prevent instruction laundering — see completeproject.md).
+
+---
+
+## Key Design Decisions
+
+| Decision | Rationale |
+|---|---|
+| Agent runtime as separate process from Tauri | Same runtime works in terminal UI without Tauri |
+| SQLite over JSON files for structured data | Queryable, transactional, portable, no server |
+| MCP for external tool integration | Standard protocol, growing ecosystem, MCP servers can run independently |
+| OS Keychain for API keys | Keys never touch disk in plaintext; survives repo clone attacks |
+| Streamable HTTP as primary MCP transport | SSE is deprecated in MCP 2025-11-05; stdio for local servers |
+| Hooks as user scripts, not plugin APIs | Lower barrier for customization; no plugin framework to maintain |
+| Skills as YAML templates | Non-developers can write skills without touching TypeScript |
+
+---
+
+## What Is Deliberately NOT in core
+
+- No UI components
+- No Tauri APIs
+- No platform-specific paths (use `os.homedir()`, not `/Users/name/`)
+- No hardcoded model names in business logic (use ModelCapabilityRegistry)
+- No direct database queries outside of `src/persistence/` repositories
+CLAUDE.md
+This is the Locoworker repo's own CLAUDE.md — the file the agent reads when working on the Locoworker codebase itself.
+
+Markdown
+
+# Locoworker — Project Context for AI Agent
+
+## What This Project Is
+
+Locoworker is an open-source AI agent harness. It lets users run Claude Code–style
+autonomous agents using any language model — Anthropic, OpenAI, Ollama local models,
+or any OpenAI-compatible endpoint.
+
+The codebase is a pnpm monorepo using Turborepo. TypeScript throughout.
+The desktop app uses Tauri (Rust + React). The terminal UI uses Ink.
+
+## Architecture (read ARCHITECTURE.md for full detail)
+
+- packages/core    — Agent engine. No UI dependencies. This is the most important package.
+- packages/desktop — Tauri desktop app. React frontend + Rust backend.
+- packages/terminal — Ink terminal UI.
+- packages/wiki    — LLMWiki MCP integration.
+- packages/graphify — Graphify MCP integration.
+
+## Build Commands
+
+```bash
+pnpm install                                    # Install dependencies
+pnpm turbo build                                # Build all packages
+pnpm test                                       # Unit tests (no API keys needed)
+pnpm test:int                                   # Integration tests (no API keys needed)
+pnpm test:eval                                  # LLM eval tests (needs ANTHROPIC_API_KEY)
+pnpm turbo typecheck                            # Type check all packages
+pnpm turbo lint                                 # Lint all packages
+pnpm --filter @locoworker/desktop tauri dev     # Desktop app dev mode
+pnpm --filter @locoworker/terminal dev          # Terminal UI dev mode
+Critical Rules When Editing This Codebase
+packages/core must NEVER import from packages/desktop or packages/terminal. It has zero UI dependencies.
+
+API keys are NEVER written to files. They go through KeyStorage → OS Keychain. If you see an API key in any file other than .env.example, that is a bug.
+
+Every workaround for a model limitation must have a MODEL_COMPENSATION comment. See CONTRIBUTING.md for the format.
+
+Every feature must be classified as EXPOSE, SURFACE, or SCAFFOLD. SCAFFOLD features require justification (see CONTRIBUTING.md).
+
+SQLite access only through the Repository classes in packages/core/src/persistence/. Never write raw SQL outside of those files.
+
+The agent loop is in packages/core/src/agent/queryLoop.ts. Changes here require integration tests AND eval tests.
+
+New tools go in packages/core/src/tools/definitions/<tool-name>.ts. They must implement the ToolDefinition interface and be registered in ToolRegistry.ts.
+
+File writes in the agent context ALWAYS go through the ToolExecutor, which fires the file-history-snapshot hook first. Never write files directly.
+
+TypeScript Style
+Strict mode always on
+No any — use unknown and narrow
+Explicit return types on all exported functions
+Prefer interface over type for object shapes
+Testing Style
+Unit tests: test/unit/ — pure logic, no LLM, no filesystem (use tmp dirs)
+Integration tests: test/integration/ — full loop with MockLLM
+Eval tests: test/eval/ — real API calls, cost-capped at $1.00 per run
+Do not use describe.only or it.only in committed code. Do not write tests that make real API calls in the unit or integration test suites.
+
+Common Mistakes to Avoid
+Don't import better-sqlite3 directly in tests — use the Repository classes
+Don't hardcode model names like 'claude-3-5-sonnet' in business logic Use ModelCapabilityRegistry.get(modelId) instead
+Don't catch errors in hooks and silently swallow them — hooks must log and continue
+Don't add console.log to production code — use the Telemetry emitter
+Don't commit .env files — .env is in .gitignore; use .env.example for templates
+Current Development Priorities (update this as work progresses)
+Phase 1 — Core agent loop on Anthropic + Ollama (current focus):
+
+ packages/core: queryLoop.ts — complete implementation
+ packages/core: ToolCallReliabilityLayer — all sub-engines
+ packages/core: ContextBudgetDetector — Ollama auto-detection
+ packages/core: FileHistoryManager — snapshot + rewind
+ packages/terminal: basic chat loop using core
+ packages/desktop: basic 3-panel layout (see docs/dashboard-spec.md)
+MCP Servers (when running locally)
+If graphify or llm-wiki MCP servers are running, they are at:
+
+Graphify: http://localhost:3100/mcp (Streamable HTTP)
+LLMWiki: http://localhost:3101/mcp (Streamable HTTP)
+These are optional — the agent works without them.
+
+Project Root Structure
+This repo is its own .locoworker project. The graph report (if generated) is at: .locoworker/graph/GRAPH_REPORT.md
+
+The wiki (if compiled) is at: .locoworker/wiki/index.json
+
+text
+
+
+---
+
+---
+
+# DEVELOPMENT.md
+
+```markdown
+# Development Setup
+
+This guide takes you from zero to a running development environment on macOS,
+Linux, or Windows.
+
+---
+
+## Prerequisites
+
+### Required for all development
+
+| Tool | Minimum version | Install |
+|---|---|---|
+| Node.js | 20.0.0 | https://nodejs.org or `nvm install 20` |
+| pnpm | 9.0.0 | `npm install -g pnpm` |
+| Git | 2.30.0 | https://git-scm.com |
+
+### Required for desktop app development
+
+| Tool | Minimum version | Install |
+|---|---|---|
+| Rust | 1.77.0 | https://rustup.rs |
+| Tauri CLI | 2.x | `cargo install tauri-cli` |
+
+### Platform-specific for desktop
+
+**macOS:**
+```bash
+xcode-select --install
+Linux (Ubuntu/Debian):
+
+Bash
+
+sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libappindicator3-dev librsvg2-dev patchelf libssl-dev
+Windows:
+
+Install Visual Studio Build Tools 2022
+Install WebView2 (usually pre-installed on Windows 11)
+Optional but recommended
+Tool	Purpose	Install
+Ollama	Local LLM testing	https://ollama.ai
+Bun	Faster alternative to Node	https://bun.sh
+Setup Steps
+1. Clone and install
+Bash
+
+git clone https://github.com/knarayanareddy/locoworker
+cd locoworker
+pnpm install
+2. Build all packages
+Bash
+
+pnpm turbo build
+This builds packages in dependency order: core → wiki, graphify, research, gateway → desktop, terminal
+
+3. Set up environment variables
+Bash
+
+cp .env.example .env
+Edit .env:
+
+Bash
+
+# Required for eval tests (optional for unit/integration tests)
+ANTHROPIC_API_KEY=sk-ant-...
+
+# Optional: Ollama (defaults to http://localhost:11434)
+OLLAMA_BASE_URL=http://localhost:11434
+
+# Optional: OpenAI-compatible providers
+OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
+
+# Development settings
+LOCOWORKER_LOG_LEVEL=debug
+LOCOWORKER_TELEMETRY_ENABLED=false
+Never commit .env to git. It is gitignored.
+
+4. Verify setup
+Bash
+
+# Run unit + integration tests (no API keys needed)
+pnpm test && pnpm test:int
+
+# Expected output: all tests pass
+Running in Development Mode
+Terminal UI (simplest, no Rust required)
+Bash
+
+pnpm --filter @locoworker/terminal dev
+This starts the Ink terminal UI connected to a local agent runtime. You will be prompted to configure a provider on first run.
+
+Desktop App
+Bash
+
+# Start the agent runtime server first
+pnpm --filter @locoworker/core dev:server
+
+# In a new terminal, start Tauri dev mode
+pnpm --filter @locoworker/desktop tauri dev
+The desktop app opens with hot module replacement for the React frontend. Changes to the Rust backend require a full restart.
+
+Agent runtime only (for debugging core)
+Bash
+
+pnpm --filter @locoworker/core dev:repl
+This starts an interactive REPL connected directly to the agent engine. Useful for testing provider routing, tool execution, and reliability layer without any UI overhead.
+
+Ollama Setup (Local LLM Testing)
+Bash
+
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.ai/install.sh | sh
+
+# Pull the recommended dev model (fast, good tool calling)
+ollama pull llama3.2:3b       # Lightweight, good for tests
+ollama pull llama3.1:8b       # Better quality, needs 8GB+ RAM
+ollama pull qwen2.5-coder:7b  # Best for code tasks locally
+
+# Verify Ollama is running
+curl http://localhost:11434/api/version
+Locoworker auto-detects Ollama at http://localhost:11434 on startup.
+
+Database Setup
+The SQLite database is created automatically on first run at: ~/.locoworker/locoworker.db
+
+For development, you can reset it:
+
+Bash
+
+rm ~/.locoworker/locoworker.db
+pnpm --filter @locoworker/core db:migrate
+To inspect the database:
+
+Bash
+
+# Using sqlite3 CLI
+sqlite3 ~/.locoworker/locoworker.db
+
+# Using a GUI (recommended)
+# - TablePlus (macOS/Windows/Linux): https://tableplus.com
+# - DB Browser for SQLite: https://sqlitebrowser.org
+Running Tests
+Bash
+
+# Unit tests only (fast, no API keys)
+pnpm test
+
+# Integration tests (medium speed, no API keys)
+pnpm test:int
+
+# All non-eval tests with coverage
+pnpm test:ci
+
+# Eval tests (slow, needs ANTHROPIC_API_KEY, costs ~$0.10-0.50)
+pnpm test:eval
+
+# Eval tests against Ollama only (free)
+pnpm test:eval -- --grep "ollama"
+
+# Specific package tests
+pnpm --filter @locoworker/core test
+
+# Watch mode (for TDD)
+pnpm --filter @locoworker/core test --watch
+Debugging
+Debug the agent runtime
+Bash
+
+# Enable verbose logging
+LOCOWORKER_LOG_LEVEL=debug pnpm --filter @locoworker/core dev:repl
+Logs are written to:
+
+Console (development mode)
+~/.locoworker/logs/<date>.ndjson (always)
+Debug Tauri/Rust
+Bash
+
+# Enable Rust backtrace
+RUST_BACKTRACE=1 pnpm --filter @locoworker/desktop tauri dev
+Debug MCP connections
+Bash
+
+# Test MCP server connectivity
+pnpm --filter @locoworker/core mcp:ping graphify
+pnpm --filter @locoworker/core mcp:list-tools graphify
+Inspect the database
+Bash
+
+# Session history
+sqlite3 ~/.locoworker/locoworker.db "SELECT id, title, model_id, turn_count, total_cost_usd FROM sessions ORDER BY created_at DESC LIMIT 10;"
+
+# Tool call history for a session
+sqlite3 ~/.locoworker/locoworker.db "SELECT tool_name, status, duration_ms FROM tool_calls WHERE session_id = 'YOUR_SESSION_ID';"
+Common Issues
+"Tauri CLI not found"
+Bash
+
+cargo install tauri-cli --version "^2"
+"WebKit2GTK not found" (Linux)
+Bash
+
+sudo apt-get install libwebkit2gtk-4.1-dev
+"Ollama connection refused"
+Bash
+
+ollama serve   # Start Ollama manually
+"pnpm workspace:* package not found"
+Bash
+
+pnpm install   # Re-run from repo root (not a package subdirectory)
+"TypeScript error in generated types"
+Bash
+
+pnpm turbo build   # Rebuild all packages to regenerate type declarations
+text
+
+
+---
+
+---
+
+# SECURITY.md
+
+```markdown
+# Security Policy
+
+## Supported Versions
+
+| Version | Supported |
+|---|---|
+| Latest main | ✅ |
+| Previous minor | ✅ Security fixes only |
+| Older versions | ❌ |
+
+---
+
+## Reporting a Vulnerability
+
+**Do not open a public GitHub issue for security vulnerabilities.**
+
+Report via GitHub Security Advisories:
+https://github.com/knarayanareddy/locoworker/security/advisories/new
+
+Or email: security@locoworker.dev
+
+### What to include
+
+1. Description of the vulnerability
+2. Affected component (tool name, package name, feature)
+3. Steps to reproduce
+4. Potential impact (data exfiltration, RCE, key theft, etc.)
+5. Suggested fix (optional but appreciated)
+
+### Response timeline
+
+| Stage | Timeline |
+|---|---|
+| Initial acknowledgement | Within 48 hours |
+| Severity assessment | Within 5 business days |
+| Fix development | Within 30 days for critical/high |
+| Public disclosure | After fix is released |
+
+---
+
+## Security Architecture
+
+### API Key Protection
+
+API keys are stored exclusively in the OS Keychain (macOS Keychain,
+Windows Credential Manager, Linux libsecret). They are never:
+
+- Written to `settings.json` or any project file
+- Included in session transcripts
+- Written to log files
+- Committed to git
+
+If you find a key anywhere in the codebase or in generated files, it is a bug.
+Report it immediately.
+
+### Bash Tool Security
+
+The bash tool is the highest-risk tool in the system. It is protected by:
+
+1. **Blocklist**: patterns that are always rejected regardless of permission mode
+   (e.g., `rm -rf /`, `curl | bash`, writes to `/etc/passwd`)
+2. **Permission gate**: explicit user approval required unless in headless mode
+3. **Pre-exec hook**: user-configurable `audit-bash` hook that can extend the blocklist
+4. **Timeout**: bash commands time out after a configurable limit (default 60s)
+5. **File snapshot**: affected files are snapshotted before execution
+
+### MCP Security
+
+MCP servers communicate over JSON-RPC. Security considerations:
+
+- Only connect to MCP servers you trust and control
+- Local stdio servers (spawned processes) are sandboxed to the project directory
+- HTTP MCP servers should be on localhost only unless you explicitly configure otherwise
+- MCP server tool schemas are validated before being passed to the model
+
+### Prompt Injection
+
+File contents and web fetch results are in the "Untrusted Zone" (see ARCHITECTURE.md).
+They may contain prompt injection attempts. Locoworker mitigates this by:
+
+- Sanitizing untrusted content before using it in compaction summaries
+- Labeling tool results in context with their source
+- Not executing model instructions that arrive via tool results without re-entering
+  the permission gate
+
+### Telemetry
+
+All telemetry is disabled by default. When enabled:
+
+- Only metadata is sent (no file contents, no prompt content, no API keys)
+- The `SafeMetadata` type barrier enforces this at compile time
+- Local NDJSON logging is always on (written to `~/.locoworker/logs/`)
+- Remote telemetry (OTLP) is opt-in
+
+---
+
+## Known Limitations
+
+- Bash tool sandboxing is policy-based (blocklist + permission gate), not
+  container-based. A sufficiently creative command may still cause harm.
+  Future versions will add optional container sandbox mode.
+- MCP servers run with the same privileges as the Locoworker process.
+  Do not run untrusted MCP servers.
+- Prompt injection from file contents cannot be fully prevented without
+  filtering that would reduce model capability.
+settings.schema.json
+JSON
+
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://locoworker.dev/settings.schema.json",
+  "title": "Locoworker Settings",
+  "description": "Complete settings schema for .locoworker/settings.json",
+  "type": "object",
+  "properties": {
+
+    "provider": {
+      "type": "object",
+      "description": "Default provider and model configuration",
+      "properties": {
+        "default": {
+          "type": "string",
+          "description": "Default provider ID",
+          "enum": ["anthropic", "openai", "ollama", "lmstudio", "openrouter", "custom"],
+          "default": "anthropic"
+        },
+        "defaultModel": {
+          "type": "string",
+          "description": "Default model ID for the default provider",
+          "examples": ["claude-3-5-sonnet-20241022", "llama3.1:8b", "gpt-4o"]
+        },
+        "ollama": {
+          "type": "object",
+          "properties": {
+            "baseUrl": { "type": "string", "default": "http://localhost:11434" },
+            "requestTimeout": { "type": "integer", "default": 300000 }
+          }
+        },
+        "lmstudio": {
+          "type": "object",
+          "properties": {
+            "baseUrl": { "type": "string", "default": "http://localhost:1234" }
+          }
+        },
+        "openrouter": {
+          "type": "object",
+          "properties": {
+            "baseUrl": { "type": "string", "default": "https://openrouter.ai/api/v1" }
+          }
+        },
+        "custom": {
+          "type": "object",
+          "properties": {
+            "baseUrl": { "type": "string" },
+            "modelId": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "agent": {
+      "type": "object",
+      "description": "Agent loop behavior",
+      "properties": {
+        "maxTurns": {
+          "type": "integer",
+          "description": "Maximum turns per session before auto-stopping",
+          "default": 100,
+          "minimum": 1,
+          "maximum": 500
+        },
+        "maxTokensPerTurn": {
+          "type": "integer",
+          "description": "Maximum output tokens per model call",
+          "default": 8192
+        },
+        "permissionMode": {
+          "type": "string",
+          "enum": ["default", "headless", "readonly", "restricted"],
+          "default": "default",
+          "description": "default=ask for risky ops; headless=allow all (CI); readonly=no writes; restricted=deny all writes+bash"
+        },
+        "autoCompact": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically compact context when threshold reached"
+        }
+      }
+    },
+
+    "memory": {
+      "type": "object",
+      "description": "Persistent memory settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "autoDream": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically consolidate memory (SCAFFOLD feature — opt-in)"
+        },
+        "maxEntries": { "type": "integer", "default": 500 },
+        "retentionDays": { "type": "integer", "default": 90 }
+      }
+    },
+
+    "fileHistory": {
+      "type": "object",
+      "description": "File history / rewind settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": true },
+        "retentionDays": {
+          "type": "integer",
+          "default": 7,
+          "description": "Delete snapshots older than this many days"
+        },
+        "maxSizeGb": {
+          "type": "number",
+          "default": 2.0,
+          "description": "Delete oldest snapshots when total size exceeds this"
+        }
+      }
+    },
+
+    "mcp": {
+      "type": "object",
+      "description": "MCP server configuration",
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "transport": {
+                "type": "string",
+                "enum": ["streamable-http", "sse", "stdio"],
+                "description": "Defaults to auto-detect. sse is deprecated."
+              },
+              "url": {
+                "type": "string",
+                "description": "For streamable-http and sse transports"
+              },
+              "command": {
+                "type": "string",
+                "description": "For stdio transport"
+              },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "enabled": { "type": "boolean", "default": true }
+            }
+          }
+        },
+        "timeout": { "type": "integer", "default": 30000 },
+        "retryAttempts": { "type": "integer", "default": 3 }
+      }
+    },
+
+    "tools": {
+      "type": "object",
+      "description": "Per-tool configuration",
+      "properties": {
+        "bash": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "timeoutMs": { "type": "integer", "default": 60000 },
+            "additionalBlocklist": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Additional regex patterns to block (in addition to built-in blocklist)"
+            }
+          }
+        },
+        "webFetch": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean", "default": true },
+            "timeoutMs": { "type": "integer", "default": 30000 },
+            "allowedDomains": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "If set, only these domains are accessible. Empty = all allowed."
+            }
+          }
+        }
+      }
+    },
+
+    "ui": {
+      "type": "object",
+      "description": "UI preferences (desktop app)",
+      "properties": {
+        "theme": {
+          "type": "string",
+          "enum": ["system", "light", "dark"],
+          "default": "system"
+        },
+        "fontSize": { "type": "integer", "default": 14, "minimum": 10, "maximum": 24 },
+        "layout": {
+          "type": "string",
+          "enum": ["default", "focus", "wide"],
+          "default": "default"
+        },
+        "showCostInHeader": { "type": "boolean", "default": true },
+        "showTokenCount": { "type": "boolean", "default": false },
+        "confirmBeforeRewind": { "type": "boolean", "default": true },
+        "activityLogCollapsed": { "type": "boolean", "default": false }
+      }
+    },
+
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry and privacy settings",
+      "properties": {
+        "enabled": { "type": "boolean", "default": false },
+        "localLogging": { "type": "boolean", "default": true },
+        "otlpExport": { "type": "boolean", "default": false },
+        "otlpEndpoint": { "type": "string" },
+        "logPromptContent": { "type": "boolean", "default": false },
+        "retentionDays": { "type": "integer", "default": 30 }
+      }
+    },
+
+    "costs": {
+      "type": "object",
+      "description": "Spend limits and cost controls",
+      "properties": {
+        "dailyLimitUsd": {
+          "type": "number",
+          "description": "Pause agent if daily spend exceeds this. 0 = no limit.",
+          "default": 0
+        },
+        "sessionLimitUsd": {
+          "type": "number",
+          "description": "Warn user if single session spend exceeds this. 0 = no limit.",
+          "default": 1.00
+        },
+        "warnBeforeExpensiveTool": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show cost estimate before executing tools that may be expensive"
+        }
+      }
+    },
+
+    "skills": {
+      "type": "object",
+      "properties": {
+        "userSkillsDir": {
+          "type": "string",
+          "description": "Additional directory to load user skills from",
+          "default": "~/.locoworker/skills/user"
+        }
+      }
+    },
+
+    "hooks": {
+      "type": "object",
+      "properties": {
+        "userHooksDir": {
+          "type": "string",
+          "description": "Additional directory to load user hooks from",
+          "default": "~/.locoworker/hooks/user"
+        },
+        "disabledBuiltIn": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Names of built-in hooks to disable",
+          "examples": [["bash-safety-audit"]]
+        }
+      }
+    }
+  }
+}
+SECTION R — Dashboard & UX Specification
+R.1 Design Philosophy: Two Audiences, One Interface
+The Locoworker dashboard must serve two very different users simultaneously:
+
+The Developer wants raw power: full terminal access, tool call details, token counts, diff views, file trees, slash commands, and direct model output.
+
+The Non-Technical User wants to get things done: ask a question, see a clear answer, know what the agent is doing, stop it if something looks wrong, and not have to understand what a "tool call" is.
+
+The solution is progressive disclosure: the default view is clean and simple; power features are one click deeper. A non-technical user should never be forced to see a JSON tool call schema unless they ask for it.
+
+R.2 The Five "Modes" of the Dashboard
+Rather than a static 3-panel layout, Locoworker uses five named modes that users can switch between. Each mode rearranges the same underlying components for a different purpose.
+
+text
+
+┌─────────────────────────────────────────────────────────────────┐
+│  Mode switcher (always visible at top)                          │
+│  ● Chat  ○ Code  ○ Review  ○ Explore  ○ Settings               │
+└─────────────────────────────────────────────────────────────────┘
+Mode	Who uses it	What it shows
+Chat	Everyone	Conversation-first, minimal chrome, clean AI responses
+Code	Developers	Side-by-side chat + live file editor + diff view
+Review	Developers	Activity log + file changes + rewind timeline
+Explore	Everyone	Knowledge graph + wiki + file tree
+Settings	Everyone	Provider setup, API keys, preferences
+Each mode is described in full detail below.
+
+R.3 Global Layout Shell
+The global shell surrounds all modes. It never changes regardless of mode.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER BAR (48px)                                                    │
+│  [🤖 Locoworker]  [Chat][Code][Review][Explore][Settings]  [●●●●●]  │
+│  project: ~/my-project         model: llama3.1:8b  $0.00  ■ Stop   │
+└──────────────────────────────────────────────────────────────────────┘
+│                                                                      │
+│  MODE CONTENT AREA (fills remainder of window)                      │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+│ STATUS BAR (24px)                                                    │
+│  ● Ready   Turn 3/100   Tokens: 2,847/8,192  [▓▓▓▓░░░░░░] 34%     │
+└──────────────────────────────────────────────────────────────────────┘
+Header Bar Components
+Logo + App name — click to go back to Chat mode
+
+Mode switcher — tabs for Chat / Code / Review / Explore / Settings
+
+Project badge — shows current project folder name. Click to open project picker.
+
+Model badge — shows current model. Click to open model picker. Shows:
+
+Provider icon (Anthropic/Ollama/OpenAI logo)
+Model short name
+Green dot = connected, yellow = slow, red = disconnected
+Cost display — shows session cost in USD. Click to open cost breakdown.
+
+For local models: shows "Local" instead of cost
+Turns orange if > 50% of daily limit
+Stop button — red square. Always visible during active agent run. Immediately stops the current agent loop. Non-technical users need this to be obvious.
+
+Status Bar Components
+Status indicator:
+
+● Ready — waiting for input (green)
+⟳ Thinking... — model generating (blue, animated)
+🔧 Running: bash — tool executing (amber)
+⚠ Needs approval — permission gate waiting (orange, pulsing)
+✓ Done — turn completed (green, fades after 3s)
+✕ Error — error occurred (red)
+Turn counter — "Turn 3/100" — how far into the session
+
+Token display — current context usage
+
+Context bar — visual bar showing context fill level:
+
+Green: < 60% full
+Yellow: 60–80% full
+Orange: 80–90% full (auto-compact will trigger)
+Red: > 90% full
+R.4 Chat Mode (Default — Non-Technical Friendly)
+This is the first thing a user sees. It must be as simple as a messaging app.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                               │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  CONVERSATION AREA (scrollable, fills most of screen)          │  │
+│  │                                                                │  │
+│  │  ┌──────────────────────────────────────────────────────────┐  │  │
+│  │  │  YOU  ·  2:34 PM                                         │  │  │
+│  │  │  Explain what the authentication system does and         │  │  │
+│  │  │  create a diagram of it.                                 │  │  │
+│  │  └──────────────────────────────────────────────────────────┘  │  │
+│  │                                                                │  │
+│  │  ┌──────────────────────────────────────────────────────────┐  │  │
+│  │  │  🤖 LOCOWORKER  ·  2:34 PM                               │  │  │
+│  │  │                                                          │  │  │
+│  │  │  ▸ Reading 3 files...     [✓ done in 1.2s]  [↩ rewind]  │  │  │
+│  │  │                                                          │  │  │
+│  │  │  The authentication system works in three parts:        │  │  │
+│  │  │                                                          │  │  │
+│  │  │  1. **Login** — Users enter email + password             │  │  │
+│  │  │     → Password is hashed with bcrypt                    │  │  │
+│  │  │     → JWT token returned (24h expiry)                   │  │  │
+│  │  │                                                          │  │  │
+│  │  │  2. **Middleware** — Every API route checks the JWT      │  │  │
+│  │  │     → Invalid token → 401 Unauthorized                  │  │  │
+│  │  │                                                          │  │  │
+│  │  │  3. **Refresh** — Token auto-refreshed on activity       │  │  │
+│  │  │                                                          │  │  │
+│  │  │  [📎 auth-diagram.png]  ← click to view                 │  │  │
+│  │  │                                                          │  │  │
+│  │  └──────────────────────────────────────────────────────────┘  │  │
+│  │                                                                │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐  │
+│  │  INPUT BAR                                                     │  │
+│  │  ┌──────────────────────────────────────────────────┐  [Send] │  │
+│  │  │ Ask anything about your project...               │         │  │
+│  │  └──────────────────────────────────────────────────┘         │  │
+│  │  [📎 Attach]  [/ Skills]  [⚙ Options]                         │  │
+│  └────────────────────────────────────────────────────────────────┘  │
+├──────────────────────────────────────────────────────────────────────┤
+│ STATUS BAR                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+Conversation Area — Non-Technical UX Rules
+Tool call display (simplified): Tool calls are NOT shown as JSON. They are shown as human-readable inline status cards:
+
+text
+
+▸ Reading auth/middleware.ts...         [✓ done in 0.4s]  [↩ rewind]
+▸ Reading auth/login.ts...              [✓ done in 0.3s]  [↩ rewind]
+▸ Creating auth-diagram.png...          [✓ done in 2.1s]  [↩ rewind]
+▸ = in progress (animated spinner)
+✓ = completed successfully
+✕ = failed
+Time taken shown in muted text
+[↩ rewind] = rewind button, visible on hover. One click undoes that tool call's file changes.
+Expandable tool details (for curious users): Each tool card has a ▸ Show details link that expands to show:
+
+The exact file path or command
+The first 200 chars of the output
+A View full output link to open in a panel
+Permission requests (non-technical friendly): When the agent needs approval, the conversation pauses and shows:
+
+text
+
+┌──────────────────────────────────────────────────────────────────┐
+│  ⚠️  Locoworker wants to run a command                           │
+│                                                                  │
+│  Command:                                                        │
+│  ┌────────────────────────────────────────────────────────────┐  │
+│  │  npm install                                               │  │
+│  └────────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  📁 In folder: ~/my-project                                      │
+│                                                                  │
+│  This will install npm packages listed in package.json.          │
+│  This is safe and reversible.                                    │
+│                                                                  │
+│  [✓ Allow once]  [✓ Allow always for this project]  [✕ Deny]    │
+└──────────────────────────────────────────────────────────────────┘
+Key UX decisions:
+
+The command is shown in a code block so it's copyable and readable
+A plain-English explanation of what the command does is always shown
+Risk level is communicated: "safe and reversible" vs "this will delete files"
+Three options: once, always-for-project, deny — no "always globally" to prevent over-permissioning
+Artifacts (images, files, reports): When the agent creates a file, it shows as an attachment card:
+
+text
+
+┌─────────────────────────────────────────────────────┐
+│  📎  auth-diagram.png                               │
+│      Image  ·  48 KB  ·  created just now           │
+│  [👁 Preview]  [📂 Open in Finder]  [↩ Undo create] │
+└─────────────────────────────────────────────────────┘
+Input Bar Components
+Message input — multiline, auto-grow. Supports:
+
+Plain text
+File drag-and-drop (attaches file path to message)
+Image paste (for vision-capable models)
+@filename mention (inserts file path inline)
+/ to open skill picker
+Attach button (📎) — opens file picker. Selected files are attached as context.
+
+Skills button (/ Skills) — opens the skills picker (see R.4.1)
+
+Options button (⚙) — opens a compact options panel:
+
+Switch model for this session
+Set permission mode for this session
+Toggle streaming display
+Clear session history
+R.4.1 Skills Picker
+When the user clicks / Skills or types /:
+
+text
+
+┌──────────────────────────────────────────────────────────────────┐
+│  ⚡ Quick Actions                                                │
+│  ┌──────────────────────────────────────────────────────────┐   │
+│  │ 🔍 Search skills...                                       │   │
+│  └──────────────────────────────────────────────────────────┘   │
+│                                                                  │
+│  RECENTLY USED                                                   │
+│  [/review-pr]  Review a pull request                            │
+│  [/write-tests]  Generate tests for a file                      │
+│                                                                  │
+│  CODE QUALITY                                                    │
+│  [/review-pr]        Review a pull request                      │
+│  [/write-tests]      Generate tests for a file                  │
+│  [/security-audit]   Scan for security issues                   │
+│  [/refactor]         Structured refactor workflow               │
+│                                                                  │
+│  DOCUMENTATION                                                   │
+│  [/write-changelog]  Generate CHANGELOG from git log            │
+│  [/explain-codebase] Create onboarding documentation            │
+│                                                                  │
+│  DEBUGGING                                                       │
+│  [/debug-error]  Systematic debug for an error message          │
+│                                                                  │
+│  [+ Create new skill]  [Browse skill registry]                  │
+└──────────────────────────────────────────────────────────────────┘
+Selecting a skill shows its argument form (if it has required arguments) or immediately inserts the skill invocation into the input bar.
+
+R.4.2 Session Sidebar
+A collapsible sidebar on the left shows past sessions:
+
+text
+
+┌────────────────────────┐
+│ SESSIONS               │
+│ [+ New Session]        │
+│                        │
+│ TODAY                  │
+│ ▶ Auth system explainer│
+│   14 turns · $0.12     │
+│                        │
+│ ▶ Refactor user module │
+│   32 turns · $0.41     │
+│                        │
+│ YESTERDAY              │
+│ ▶ Debug login error    │
+│   8 turns · $0.07      │
+│                        │
+│ [Search sessions...]   │
+└────────────────────────┘
+Non-technical users see: session title (auto-generated), turn count, cost (or "Local"). Developers can also see: model used, total tokens, session start time.
+
+R.5 Code Mode (Developer Focus)
+This mode is for active coding work. It shows chat alongside live file editing.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                               │
+├─────────────────────────┬────────────────────────────────────────────┤
+│                         │                                            │
+│  CHAT PANEL (35%)       │  FILE EDITOR PANEL (65%)                   │
+│                         │                                            │
+│  [Conversation...]      │  ┌──────────────────────────────────────┐  │
+│                         │  │ FILE TABS                            │  │
+│                         │  │ [auth/login.ts ✎] [auth/middleware.ts]│  │
+│                         │  └──────────────────────────────────────┘  │
+│  ▸ Editing              │                                            │
+│    auth/login.ts...     │  ┌──────────────────────────────────────┐  │
+│                         │  │ DIFF VIEW (when agent edits a file)  │  │
+│                         │  │  1  - const token = jwt.sign(...)    │  │
+│                         │  │  1  + const token = jwt.sign({       │  │
+│                         │  │  2  +   ...payload,                  │  │
+│                         │  │  3  +   iat: Date.now()              │  │
+│                         │  │  4  + }, secret, { expiresIn: '24h' }│  │
+│                         │  └──────────────────────────────────────┘  │
+│                         │                                            │
+│                         │  [✓ Accept]  [✕ Reject]  [↩ Rewind]       │
+│                         │                                            │
+│  [Input bar]            │  ┌──────────────────────────────────────┐  │
+│                         │  │ TERMINAL PANEL (collapsible)         │  │
+│                         │  │ $ npm test                           │  │
+│                         │  │ ✓ 47 tests passed                    │  │
+│                         │  └──────────────────────────────────────┘  │
+├─────────────────────────┴────────────────────────────────────────────┤
+│ STATUS BAR                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+File Editor Panel
+File tabs — show all files touched in this session. Modified files get a pencil icon ✎. Unsaved-but-agent-written files get an amber dot ●.
+
+Diff view — when the agent writes a file, the diff view appears automatically showing the exact change in green/red unified diff format. The user can:
+
+Accept — keep the change (no action needed, it's already written)
+Reject — rewind this specific file change
+Rewind — go back further through history
+Source view — when no diff is active, shows the file in a read-only syntax-highlighted view. Users can click any line to ask "what does this do?" and the agent will explain.
+
+Terminal panel — shows the output of bash tool calls in real time. Can be pinned open or set to auto-open when bash runs.
+
+R.6 Review Mode (Audit What Happened)
+This mode lets users see exactly what the agent did, and undo any step.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                               │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  REWIND TIMELINE (horizontal, scrollable)                           │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  Turn 1       Turn 2         Turn 3          Turn 4          │   │
+│  │  [💬 Chat]  [📄 Read×3]  [✎ Edit login.ts] [🔧 npm test]    │   │
+│  │               └─────────────────────────────────► [↩ Rewind here] │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                      │
+├─────────────────────────────┬────────────────────────────────────────┤
+│                             │                                        │
+│  ACTIVITY LOG (40%)         │  CHANGE VIEWER (60%)                   │
+│                             │                                        │
+│  TURN 3 — 2:36 PM          │  auth/login.ts                         │
+│  ┌───────────────────────┐  │  ┌──────────────────────────────────┐  │
+│  │ ✎ write_file         │  │  │ BEFORE          │  AFTER         │  │
+│  │   auth/login.ts      │  │  │                 │                │  │
+│  │   +12 lines          │  │  │ jwt.sign(       │ jwt.sign({     │  │
+│  │   [View diff]        │  │  │   payload,      │   ...payload,  │  │
+│  │   [↩ Rewind this]    │  │  │   secret        │   iat: Date... │  │
+│  └───────────────────────┘  │  │ )               │ }, secret, {} │  │
+│                             │  └──────────────────────────────────┘  │
+│  ┌───────────────────────┐  │                                        │
+│  │ 🔧 bash               │  │  [↩ Rewind auth/login.ts to before]   │
+│  │   npm test            │  │                                        │
+│  │   exit 0 · 4.2s       │  │  FILES CHANGED THIS SESSION           │
+│  │   [View output]       │  │  ┌──────────────────────────────────┐  │
+│  └───────────────────────┘  │  │ ✎ auth/login.ts     +12/-3      │  │
+│                             │  │ ✎ auth/middleware.ts +5/-1       │  │
+│  TURN 4                     │  │ + auth/auth.test.ts  +47/-0      │  │
+│  ...                        │  └──────────────────────────────────┘  │
+│                             │                                        │
+│  [↩ Rewind entire session]  │  [↩ Rewind all changes this session]   │
+│                             │                                        │
+└─────────────────────────────┴────────────────────────────────────────┘
+│ STATUS BAR                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+Non-Technical UX in Review Mode
+Every file change has a plain-English summary: "Added expiry time to JWT token generation"
+Risk indicators: changes to configuration files or security-related files get a ⚠️ Security-related change badge
+The "Rewind all changes this session" button at the bottom is a one-click full undo — with a confirmation dialog that shows exactly which files will be restored
+R.7 Explore Mode (Knowledge Graph + Wiki)
+This mode lets users understand their codebase without having to ask the agent.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                               │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 🔍  Search your codebase...                           [⌘K] │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+├──────────────────────┬───────────────────────────────────────────────┤
+│                      │                                               │
+│  SIDEBAR (25%)       │  EXPLORE CONTENT (75%)                        │
+│                      │                                               │
+│  [📁 Files]          │  ┌─────────────────────────────────────────┐  │
+│  [🗺 Graph]          │  │  KNOWLEDGE GRAPH                        │  │
+│  [📖 Wiki]           │  │                                         │  │
+│  [🧠 Memory]         │  │     [AuthService] ──── [UserModel]      │  │
+│                      │  │          │                   │          │  │
+│  RECENT TOPICS       │  │    [JWTHelper]         [Database]       │  │
+│  • Authentication    │  │          │                   │          │  │
+│  • User model        │  │    [Middleware] ────── [SessionStore]   │  │
+│  • JWT tokens        │  │                                         │  │
+│  • Database layer    │  │  Click any node to explore              │  │
+│                      │  └─────────────────────────────────────────┘  │
+│  FILE TREE           │                                               │
+│  ▶ src/              │  ┌─────────────────────────────────────────┐  │
+│    ▶ auth/           │  │  SELECTED: AuthService                  │  │
+│      login.ts        │  │                                         │  │
+│      middleware.ts   │  │  📄 src/auth/login.ts                   │  │
+│    ▶ models/         │  │                                         │  │
+│    ▶ routes/         │  │  Handles user authentication. Accepts   │  │
+│                      │  │  email + password, validates against    │  │
+│                      │  │  database, returns JWT token.           │  │
+│                      │  │                                         │  │
+│                      │  │  Connected to: JWTHelper, UserModel     │  │
+│                      │  │  Called by: /api/auth/login route       │  │
+│                      │  │                                         │  │
+│                      │  │  [💬 Ask about this]  [📄 View file]    │  │
+│                      │  └─────────────────────────────────────────┘  │
+│                      │                                               │
+└──────────────────────┴───────────────────────────────────────────────┘
+│ STATUS BAR                                                           │
+└──────────────────────────────────────────────────────────────────────┘
+"Ask about this" Button
+Clicking [💬 Ask about this] on any graph node, wiki page, or file instantly opens Chat mode with a pre-filled message: "Explain how AuthService works." — making Explore mode a natural entry point for non-technical users who want to understand before they ask the agent to change something.
+
+Wiki Panel
+When [📖 Wiki] is selected in the sidebar:
+
+text
+
+┌─────────────────────────────────────────────────────────────────────┐
+│  📖 PROJECT WIKI                            [🔄 Rebuild wiki]       │
+│                                                                     │
+│  Last compiled: 2 hours ago · 47 pages                             │
+│                                                                     │
+│  GETTING STARTED                                                    │
+│  ▶ Project Overview                                                 │
+│  ▶ Architecture Overview                                            │
+│  ▶ How to Run Locally                                               │
+│                                                                     │
+│  CORE CONCEPTS                                                      │
+│  ▶ Authentication System  ← (click to open)                        │
+│  ▶ Database Layer                                                   │
+│  ▶ API Routes                                                       │
+│                                                                     │
+│  COMPONENTS                                                         │
+│  ▶ UserModel                                                        │
+│  ▶ AuthService                                                      │
+│  ▶ JWTHelper                                                        │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+Wiki pages are rendered as rich Markdown with hyperlinks between concepts. A non-technical user can navigate the codebase entirely through the wiki without ever seeing code.
+
+R.8 Settings Mode (Onboarding + Configuration)
+Settings is also where the first-run onboarding lives. It is structured as a wizard for new users and a preferences panel for returning users.
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│ HEADER                                                               │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌───────────────────┬───────────────────────────────────────────┐  │
+│  │                   │                                           │  │
+│  │  SETTINGS NAV     │  CONTENT AREA                             │  │
+│  │                   │                                           │  │
+│  │  🤖 AI Models     │  AI MODELS                                │  │
+│  │  🔑 API Keys      │  ─────────────────────────────────────   │  │
+│  │  📁 Projects      │                                           │  │
+│  │  🎨 Appearance    │  CONNECTED PROVIDERS                      │  │
+│  │  🔒 Permissions   │  ┌─────────────────────────────────────┐ │  │
+│  │  💰 Cost Limits   │  │ ✅ Anthropic Claude                  │ │  │
+│  │  🧩 Extensions    │  │    claude-3-5-sonnet ← default       │ │  │
+│  │  🔧 Advanced      │  │    [Change key]  [Change model]      │ │  │
+│  │                   │  └─────────────────────────────────────┘ │  │
+│  │                   │                                           │  │
+│  │                   │  ┌─────────────────────────────────────┐ │  │
+│  │                   │  │ ✅ Ollama (Local)                    │ │  │
+│  │                   │  │    Connected · 3 models available    │ │  │
+│  │                   │  │    llama3.1:8b / llama3.2:3b / ...   │ │  │
+│  │                   │  │    [Open Ollama settings]            │ │  │
+│  │                   │  └─────────────────────────────────────┘ │  │
+│  │                   │                                           │  │
+│  │                   │  ┌─────────────────────────────────────┐ │  │
+│  │                   │  │ ➕ Add another provider              │ │  │
+│  │                   │  │    OpenAI · OpenRouter · LM Studio   │ │  │
+│  │                   │  │    Custom endpoint (BYOK)            │ │  │
+│  │                   │  └─────────────────────────────────────┘ │  │
+│  │                   │                                           │  │
+│  └───────────────────┴───────────────────────────────────────────┘  │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+First-Run Wizard
+When the app is opened for the first time, instead of the normal Settings view, a wizard appears:
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  👋 Welcome to Locoworker                                            │
+│                                                                      │
+│  An AI agent that works in your codebase.                           │
+│  Let's get you set up in 3 steps.                                   │
+│                                                                      │
+│  ━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  Step 1 of 3                │
+│                                                                      │
+│  HOW DO YOU WANT TO USE AI?                                         │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  🌐 Use Anthropic Claude (recommended)                       │    │
+│  │     Needs an API key. Best quality. Small cost per use.     │    │
+│  │     [Select]                                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  🖥️  Use Local AI (free, private)                            │    │
+│  │     Runs on your computer. No cost. Needs Ollama installed. │    │
+│  │     [Select]                                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  🔑 Use my own API key (OpenAI or other)                     │    │
+│  │     Bring your own key for any OpenAI-compatible model.     │    │
+│  │     [Select]                                                 │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
+Step 2 — Enter key or confirm Ollama:
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  🔑 Connect Anthropic Claude                                         │
+│                                                                      │
+│  ━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━  Step 2 of 3                │
+│                                                                      │
+│  Get your API key from console.anthropic.com                        │
+│  (free to sign up, ~$5 free credit for new accounts)                │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ sk-ant-...                                          [Paste] │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  🔒 Your key is stored securely in your Mac's Keychain.             │
+│     Locoworker never sends it anywhere except Anthropic directly.   │
+│                                                                      │
+│  [← Back]                                          [Test & Continue →]│
+└──────────────────────────────────────────────────────────────────────┘
+Step 3 — Open a project:
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  📁 Open a Project                                                   │
+│                                                                      │
+│  ━━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━  Step 3 of 3                │
+│                                                                      │
+│  Where do you want to work?                                         │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  📂 Open existing folder                   [Browse...]      │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │  ✨ Start fresh in a new folder                              │    │
+│  │     ~/locoworker-projects/my-project       [Create]         │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  RECENT PROJECTS                                                     │
+│  ~/my-app          [Open]                                           │
+│  ~/another-project [Open]                                           │
+│                                                                      │
+│  [← Back]                                            [Let's go! →]  │
+└──────────────────────────────────────────────────────────────────────┘
+R.9 Cost & Budget UI
+The cost system must be completely transparent and non-alarming for non-technical users.
+
+Cost display principles
+Always show cost in a unit the user understands (USD, not tokens)
+For local models: show "Local · Free" not $0.00
+Never show token counts in the main UI unless the user opts in
+Daily spend shown as a progress bar only when approaching the limit
+Cost breakdown panel (click on cost in header)
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  💰 Cost & Usage                                           [Close X] │
+│                                                                      │
+│  THIS SESSION                                                        │
+│  $0.23 · 47,000 tokens · 14 turns                                   │
+│                                                                      │
+│  BREAKDOWN                                                           │
+│  Reading files        $0.04  ████░░░░░░░  18%                       │
+│  Writing/editing      $0.09  ████████░░░  39%                       │
+│  Running commands     $0.02  ██░░░░░░░░░   9%                       │
+│  Thinking / planning  $0.08  ███████░░░░  34%                       │
+│                                                                      │
+│  TODAY                                                               │
+│  $0.87 of $5.00 daily limit  ███████░░░░░░░░░░░░░  17%             │
+│                                                                      │
+│  THIS MONTH                                                          │
+│  $12.40  [View breakdown by day]                                    │
+│                                                                      │
+│  [Change daily limit]  [Export CSV]                                 │
+│                                                                      │
+│  💡 Tip: Switch to llama3.1:8b (local) for free usage on simple    │
+│          tasks. Use Claude for complex coding work.                  │
+└──────────────────────────────────────────────────────────────────────┘
+R.10 Model Picker UI
+Clicking the model badge in the header opens:
+
+text
+
+┌──────────────────────────────────────────────────────────────────────┐
+│  🤖 Choose a Model                                        [Close X]  │
+│                                                                      │
+│  ┌─────────────────────────────────────────────────────────────┐    │
+│  │ 🔍 Search models...                                         │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│                                                                      │
+│  RECOMMENDED                                                         │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │ ● Claude 3.5 Sonnet          Anthropic                     │     │
+│  │   Best for complex tasks · ~$0.003/turn · ✓ Tools ✓ Vision│     │
+│  │                                                   [Select] │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │   Claude 3.5 Haiku           Anthropic                     │     │
+│  │   Fast and affordable · ~$0.0005/turn · ✓ Tools            │     │
+│  │                                                   [Select] │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  LOCAL MODELS (free)                                                 │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │   llama3.1:8b                Ollama · Local                │     │
+│  │   Good all-rounder · Free · ✓ Tools · 8GB RAM needed      │     │
+│  │                                                   [Select] │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────┐     │
+│  │   llama3.2:3b                Ollama · Local                │     │
+│  │   Fastest local model · Free · ✓ Tools · 4GB RAM needed   │     │
+│  │                                                   [Select] │     │
+│  └────────────────────────────────────────────────────────────┘     │
+│                                                                      │
+│  [+ Pull a new Ollama model]                                         │
+└──────────────────────────────────────────────────────────────────────┘
+Model cards show:
+
+Plain-English capability tags: ✓ Tools, ✓ Vision, ✓ Code
+Cost per turn (not per token — more relatable)
+RAM requirement for local models
+Reliability indicator (not shown to users, but informs sort order)
+R.11 Tauri IPC Contract (Complete)
+This is the complete event + command contract between the React frontend and the Tauri/Node.js backend.
+
+TypeScript
+
+// packages/desktop/src/ipc/contracts.ts
+
+// ─── Commands (frontend → backend) ────────────────────────────────────
+
+export interface TauriCommands {
+  // Session management
+  'create_session':    { projectRoot: string; providerId: string; modelId: string } → SessionInfo
+  'resume_session':    { sessionId: string } → SessionInfo
+  'list_sessions':     { limit?: number } → SessionInfo[]
+  'delete_session':    { sessionId: string } → void
+
+  // Messaging
+  'send_message':      { sessionId: string; content: string; attachments?: string[] } → void
+  'stop_agent':        { sessionId: string } → void
+
+  // Permissions
+  'approve_tool':      { sessionId: string; toolCallId: string; memory?: boolean } → void
+  'deny_tool':         { sessionId: string; toolCallId: string } → void
+
+  // File history
+  'list_snapshots':    { sessionId: string } → SnapshotEntry[]
+  'rewind_to_turn':    { sessionId: string; turn: number } → RewindResult
+  'rewind_snapshot':   { sessionId: string; snapshotId: string } → RewindResult
+
+  // Skills
+  'list_skills':       {} → Skill[]
+  'invoke_skill':      { sessionId: string; skillCommand: string; args: string[] } → void
+
+  // Settings
+  'get_settings':      {} → Settings
+  'update_settings':   { patch: Partial<Settings> } → Settings
+  'save_api_key':      { providerId: string; apiKey: string } → void
+  'delete_api_key':    { providerId: string } → void
+  'list_api_keys':     {} → ProviderCredentialHint[]
+
+  // Providers
+  'list_providers':    {} → ProviderInfo[]
+  'test_provider':     { providerId: string } → { ok: boolean; latencyMs: number; error?: string }
+  'list_ollama_models':  {} → OllamaModelInfo[]
+  'pull_ollama_model':   { modelName: string } → void  // streams progress via events
+
+  // Projects
+  'open_project':      { path: string } → ProjectInfo
+  'recent_projects':   {} → ProjectInfo[]
+
+  // Knowledge
+  'get_graph_report':  { projectRoot: string } → string
+  'list_wiki_pages':   { projectRoot: string } → WikiPageIndex[]
+  'get_wiki_page':     { projectRoot: string; pageId: string } → WikiPage
+
+  // System
+  'open_in_finder':    { path: string } → void
+  'check_updates':     {} → UpdateInfo | null
+  'get_app_version':   {} → string
+}
+
+// ─── Events (backend → frontend) ─────────────────────────────────────
+
+export interface TauriEvents {
+  // Agent stream events
+  'agent:text_delta':       { sessionId: string; delta: string }
+  'agent:tool_start':       { sessionId: string; toolCallId: string; toolName: string; inputPreview: string }
+  'agent:tool_complete':    { sessionId: string; toolCallId: string; status: 'success' | 'error' | 'blocked'; durationMs: number; snapshotId?: string }
+  'agent:permission_request': { sessionId: string; toolCallId: string; toolName: string; inputHuman: string; riskLevel: 'safe' | 'moderate' | 'dangerous'; explanation: string }
+  'agent:turn_complete':    { sessionId: string; turnNumber: number; tokensUsed: number; costUsd: number }
+  'agent:session_complete': { sessionId: string; totalTurns: number; totalCostUsd: number }
+  'agent:error':            { sessionId: string; error: string; recoverable: boolean }
+  'agent:context_warning':  { sessionId: string; usagePct: number; level: 'warn' | 'critical' }
+  'agent:compacting':       { sessionId: string; type: 'micro' | 'auto' | 'full' }
+
+  // File events
+  'file:written':           { sessionId: string; filePath: string; snapshotId: string; isNew: boolean }
+  'file:rewound':           { sessionId: string; filesRestored: string[] }
+
+  // Ollama pull progress
+  'ollama:pull_progress':   { modelName: string; status: string; pct: number }
+
+  // Updates
+  'update:available':       { version: string; releaseNotes: string }
+  'update:progress':        { pct: number; status: string }
+}
+R.12 Accessibility & Non-Technical UX Rules
+These rules apply to every UI component, enforced in code review:
+
+Language rules
+Never use technical jargon in user-facing strings without explanation
+Error messages must explain what happened AND what to do next
+Permission dialogs must explain in plain English what the operation will do
+All technical terms must have a tooltip with a plain-English definition
+Status messages use active voice: "Locoworker is reading your file" not "file read operation in progress"
+Interaction rules
+Every destructive action requires confirmation
+Every action that modifies files shows a ↩ Undo option for at least 30 seconds after completion
+The stop button is always visible and always works immediately when the agent is running
+Loading states always show progress (spinner + text) — never blank screens
+Keyboard shortcuts are shown next to their actions but never required
+Error handling rules
+Network errors → "Can't reach [provider]. Check your internet connection." + retry button
+API key errors → "Your API key isn't working. Check it in Settings." + settings link
+Model errors → "The model returned an unexpected response. Try again or switch models."
+Tool errors → Show what failed, offer to retry or skip, offer to rewind
+Context overflow → "This conversation is getting very long. [Start fresh] or [Compress history]"
+Onboarding rules
+First-run wizard must complete in under 5 minutes for a non-technical user
+Ollama not installed → show install link + simple install instructions (3 steps max)
+No API key → show where to get one + estimated cost for typical use
+First successful agent turn → show a brief "✓ It's working!" celebration + tip
+Final Complete Document List
+Document	Status
+docs/completeproject.md	✅ Original spec
+docs/addendum.md (Sections A–J)	✅ Architecture improvements
+docs/addendum-2.md (Sections L–Q)	✅ Infrastructure + testing
+CONTRIBUTING.md	✅ This document
+ARCHITECTURE.md	✅ This document
+CLAUDE.md (root)	✅ This document
+DEVELOPMENT.md	✅ This document
+SECURITY.md	✅ This document
+.locoworker/settings.schema.json	✅ This document
+docs/dashboard-spec.md (Section R)	✅ This document
+The specification is now complete. An agent handed all of these documents in sequence can build Locoworker from an empty repository to a shippable application — including the database schema, security layer, CI/CD pipeline, desktop app, and a non-technical-friendly dashboard — without making any undocumented architectural decisions.
+
+
+
+
+
+
