@@ -1,0 +1,22 @@
+{
+  "name": "locoworker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude CoWork — BYOK + Local LLM agentic coding workspace",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "typecheck": "tsc -b",
+    "cowork": "bun run apps/cowork-cli/src/index.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "@types/node": "^22.5.0",
+    "@types/bun": "^1.1.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}
