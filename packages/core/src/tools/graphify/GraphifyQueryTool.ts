@@ -56,7 +56,7 @@ export function makeGraphifyQueryTool(session: GraphifySession): ToolDefinition<
           return ok(
             hits
               .map(
-                (h) =>
+                (h: any) =>
                   `${h.score.toFixed(3)}  ${h.node.kind.padEnd(10)} ${h.node.id}`,
               )
               .join("\n"),
@@ -75,7 +75,7 @@ export function makeGraphifyQueryTool(session: GraphifySession): ToolDefinition<
           return ok(
             list
               .slice(0, limit)
-              .map((n) => `${n.kind.padEnd(10)} ${n.id}`)
+              .map((n: any) => `${n.kind.padEnd(10)} ${n.id}`)
               .join("\n"),
           );
         }
@@ -85,14 +85,14 @@ export function makeGraphifyQueryTool(session: GraphifySession): ToolDefinition<
           }
           const path = query.shortestPath(input.nodeId, input.to);
           if (!path) return ok(`no path between ${input.nodeId} and ${input.to}`);
-          return ok(path.map((n) => n.id).join("\n  → "));
+          return ok(path.map((n: any) => n.id).join("\n  → "));
         }
         case "central": {
           const top = query.topByCentrality(limit);
           return ok(
             top
               .map(
-                (n) =>
+                (n: any) =>
                   `${(n.centrality ?? 0).toFixed(3)}  ${n.kind.padEnd(10)} ${n.id}`,
               )
               .join("\n"),

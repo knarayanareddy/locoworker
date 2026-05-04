@@ -1,209 +1,223 @@
-import { QueryEngine } from "./QueryEngine.js";
-import { PermissionGate } from "./permissions/PermissionGate.js";
-import { buildToolMap } from "./tools/index.js";
-import {
-  ContextCompressor,
-  estimateTokens,
-} from "./services/compact/ContextCompressor.js";
-import type { ToolDefinition, ExecutionContext, ToolResult } from "./Tool.js";
-import type { PermissionLevel } from "./permissions/PermissionLevel.js";
-import type {
-  AgentEvent,
-  ContentBlock,
-  Message,
-  ToolUseBlock,
-  ToolResultBlock,
-} from "./types.js";
+// packages/core/src/queryLoop.ts
+// The agent loop — patched for Phase 5:
+//   1) finalText accumulates across ALL turns (not reset per tool call)
+//   2) HookRegistry integration (pre-tool, post-tool, on-turn, on-complete, on-event)
 
-export type AgentLoopConfig = {
+import type { Message, AgentEvent } from "./types.js";
+import type { QueryEngine } from "./QueryEngine.js";
+import type { ToolDefinition, ExecutionContext } from "./Tool.js";
+import { PermissionGate } from "./permissions/PermissionGate.js";
+import type { PermissionLevel } from "./permissions/PermissionLevel.js";
+import type { ContextCompressor } from "./services/compact/ContextCompressor.js";
+import type { HookRegistry } from "./hooks/HookRegistry.js";
+
+export interface QueryLoopConfig {
   engine: QueryEngine;
-  tools: ToolDefinition[];
   systemPrompt: string;
-  workingDirectory: string;
-  permissionLevel: PermissionLevel;
+  tools?: ToolDefinition[];
   maxTurns?: number;
   maxTokens?: number;
-  requestApproval?: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
+  permissionLevel?: PermissionLevel;
+  requestApproval?: (toolName: string, input: unknown) => Promise<boolean>;
   abortSignal?: AbortSignal;
-  /** Optional. When set, MicroCompact runs on tool results and AutoCompact runs near the ceiling. */
   compressor?: ContextCompressor;
-  /** Optional hook called once per turn after the model response is appended. */
-  onTurn?: (turn: number, response: { content: ContentBlock[] }) => void | Promise<void>;
-};
+  hooks?: HookRegistry;
+}
 
-/**
- * The heart: an async generator that runs the model in a loop, executing
- * any tool calls it produces and feeding the results back as the next
- * user-role turn. Yields events the CLI/UI can stream.
- */
+function estimateTokens(messages: Message[]): number {
+  let chars = 0;
+  for (const msg of messages) {
+    if (typeof msg.content === "string") {
+      chars += msg.content.length;
+    } else {
+      for (const block of msg.content) {
+        if (block.type === "text") chars += block.text.length;
+        else if (block.type === "tool_use") chars += JSON.stringify(block.input).length;
+        else if (block.type === "tool_result") chars += block.content.length;
+      }
+    }
+  }
+  return Math.ceil(chars / 4);
+}
+
 export async function* queryLoop(
   userInput: string,
-  config: AgentLoopConfig,
+  config: QueryLoopConfig
 ): AsyncGenerator<AgentEvent> {
-  const toolMap = buildToolMap(config.tools);
+  const {
+    engine,
+    systemPrompt,
+    tools = [],
+    maxTurns = 50,
+    maxTokens = 4096,
+    permissionLevel,
+    requestApproval,
+    abortSignal,
+    compressor,
+    hooks,
+  } = config;
+
+  const gate = new PermissionGate(permissionLevel);
   const history: Message[] = [{ role: "user", content: userInput }];
-  const maxTurns = config.maxTurns ?? 50;
-  const compressor = config.compressor;
 
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
-  let turn = 0;
+  // ── PHASE 5 FIX: finalText accumulates across all turns ─────────────────
   let finalText = "";
 
-  while (turn < maxTurns) {
-    turn++;
-    yield { type: "turn_start", turn };
+  for (let turn = 0; turn < maxTurns; turn++) {
+    if (abortSignal?.aborted) break;
 
-    if (config.abortSignal?.aborted) {
-      yield { type: "error", message: "Aborted by user" };
-      return;
+    const estimatedTokens = estimateTokens(history);
+
+    if (hooks) {
+      const ok = await hooks.run("on-turn", { turn, historyLength: history.length, estimatedTokens });
+      if (!ok) break;
     }
 
-    // Compaction check before sending to the model.
-    if (compressor) {
-      const tokens = estimateTokens(history);
-      if (compressor.shouldAutoCompact(tokens)) {
-        const compacted = await compressor.autoCompact(history);
-        if (compacted) {
-          const after = estimateTokens(compacted);
-          history.length = 0;
-          history.push(...compacted);
-          yield { type: "compact", before: tokens, after };
-        } else {
-          yield { type: "compact_skipped", reason: "compaction returned null" };
-        }
+    if (compressor?.shouldAutoCompact(estimatedTokens)) {
+      const compacted = await compressor.autoCompact(history);
+      if (compacted) {
+        history.length = 0;
+        history.push(...compacted);
+        const ev: AgentEvent = { type: "compaction", summary: "[Context compacted]" };
+        if (hooks) await hooks.run("on-event", { event: ev });
+        yield ev;
       }
     }
 
-    let response;
+    const tsEv: AgentEvent = { type: "turn_start", turn };
+    if (hooks) await hooks.run("on-event", { event: tsEv });
+    yield tsEv;
+
+    let modelResponse: Awaited<ReturnType<typeof engine.call>>;
     try {
-      response = await config.engine.call({
-        systemPrompt: config.systemPrompt,
+      modelResponse = await engine.call({
+        systemPrompt,
         messages: history,
-        tools: config.tools,
-        maxTokens: config.maxTokens,
-        abortSignal: config.abortSignal,
+        tools,
+        maxTokens,
+        abortSignal
       });
     } catch (e) {
-      yield { type: "error", message: `Model call failed: ${(e as Error).message}` };
-      return;
+      const ev: AgentEvent = { type: "error", message: e instanceof Error ? e.message : String(e) };
+      if (hooks) await hooks.run("on-event", { event: ev });
+      yield ev;
+      break;
     }
 
-    totalInputTokens += response.usage.inputTokens;
-    totalOutputTokens += response.usage.outputTokens;
+    totalInputTokens += modelResponse.usage?.inputTokens ?? 0;
+    totalOutputTokens += modelResponse.usage?.outputTokens ?? 0;
 
-    for (const block of response.content) {
-      if (block.type === "text" && block.text) {
-        yield { type: "text", text: block.text };
-        finalText += block.text;
+    const assistantBlocks = Array.isArray(modelResponse.content)
+      ? modelResponse.content
+      : [{ type: "text" as const, text: String(modelResponse.content) }];
+
+    for (const block of assistantBlocks) {
+      if (block.type === "text") {
+        finalText += block.text; // accumulate, never reset
+        const ev: AgentEvent = { type: "text", text: block.text };
+        if (hooks) await hooks.run("on-event", { event: ev });
+        yield ev;
       } else if (block.type === "tool_use") {
-        yield { type: "tool_call", id: block.id, name: block.name, input: block.input };
+        const ev: AgentEvent = { type: "tool_call", name: block.name, input: block.input, id: block.id };
+        if (hooks) await hooks.run("on-event", { event: ev });
+        yield ev;
       }
     }
 
-    history.push({ role: "assistant", content: response.content });
-    if (config.onTurn) await config.onTurn(turn, response);
+    history.push({ role: "assistant", content: assistantBlocks });
 
-    if (response.stopReason !== "tool_use") {
-      yield {
+    if (modelResponse.stopReason !== "tool_use") {
+      if (hooks) {
+        await hooks.run("on-complete", { turns: turn + 1, totalInputTokens, totalOutputTokens, finalText });
+      }
+      const ev: AgentEvent = {
         type: "complete",
         text: finalText,
         usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens },
       };
+      if (hooks) await hooks.run("on-event", { event: ev });
+      yield ev;
       return;
     }
 
-    const toolUses = response.content.filter(
-      (b): b is ToolUseBlock => b.type === "tool_use",
-    );
-    const resultBlocks: ToolResultBlock[] = [];
+    const toolUseBlocks = assistantBlocks.filter((b) => b.type === "tool_use") as Array<{ type: "tool_use", name: string, input: any, id: string }>;
+    const toolResultBlocks: Array<{ type: "tool_result"; tool_use_id: string; content: string; is_error?: boolean }> = [];
 
-    for (const tu of toolUses) {
-      finalText = "";
-      const tool = toolMap.get(tu.name);
+    for (const toolBlock of toolUseBlocks) {
+      const tool = tools.find((t) => t.name === toolBlock.name);
+
       if (!tool) {
-        resultBlocks.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: `Unknown tool: ${tu.name}`,
-          is_error: true,
-        });
-        yield {
-          type: "tool_result",
-          id: tu.id,
-          name: tu.name,
-          result: `Unknown tool: ${tu.name}`,
-          isError: true,
-        };
+        toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: `Error: tool "${toolBlock.name}" not found`, is_error: true });
         continue;
       }
 
-      const ctx: ExecutionContext = {
-        workingDirectory: config.workingDirectory,
-        permissionLevel: config.permissionLevel,
-        requestApproval: config.requestApproval,
-        abortSignal: config.abortSignal,
+      const execCtx: ExecutionContext = {
+        workingDirectory: process.cwd(),
+        permissionLevel: gate.sessionLevel,
+        abortSignal,
       };
 
-      const gateResult = PermissionGate.check(tool, ctx);
-      if (gateResult.allowed === false) {
-        resultBlocks.push({
-          type: "tool_result",
-          tool_use_id: tu.id,
-          content: `Permission denied: ${gateResult.reason}`,
-          is_error: true,
-        });
-        yield { type: "permission_denied", tool: tu.name, reason: gateResult.reason };
+      const permission = gate.check(tool, execCtx);
+
+      if (permission === "denied") {
+        const ev: AgentEvent = { type: "permission_denied", toolName: tool.name, reason: "Permission level too low" };
+        if (hooks) await hooks.run("on-event", { event: ev });
+        yield ev;
+        toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: "Permission denied", is_error: true });
         continue;
       }
 
-      if (gateResult.allowed === "needs_approval") {
-        yield { type: "permission_request", tool: tu.name, input: tu.input };
-        const approved = config.requestApproval
-          ? await config.requestApproval(tu.name, tu.input)
-          : false;
+      if (permission === "needs_approval") {
+        const reqEv: AgentEvent = { type: "permission_request", toolName: tool.name, input: toolBlock.input };
+        if (hooks) await hooks.run("on-event", { event: reqEv });
+        yield reqEv;
+
+        const approved = requestApproval ? await requestApproval(tool.name, toolBlock.input) : false;
         if (!approved) {
-          resultBlocks.push({
-            type: "tool_result",
-            tool_use_id: tu.id,
-            content: `User declined approval for ${tu.name}`,
-            is_error: true,
-          });
-          yield { type: "permission_denied", tool: tu.name, reason: "user declined" };
+          const denyEv: AgentEvent = { type: "permission_denied", toolName: tool.name, reason: "User denied" };
+          if (hooks) await hooks.run("on-event", { event: denyEv });
+          yield denyEv;
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: "User denied permission", is_error: true });
           continue;
         }
       }
 
-      let result: ToolResult;
-      try {
-        result = await tool.execute(tu.input, ctx);
-      } catch (e) {
-        result = { content: `Tool threw: ${(e as Error).message}`, isError: true };
+      if (hooks) {
+        const proceed = await hooks.run("pre-tool", { toolName: tool.name, input: toolBlock.input, executionContext: execCtx });
+        if (!proceed) {
+          toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: "Cancelled by pre-tool hook", is_error: true });
+          continue;
+        }
       }
 
-      // MicroCompact large outputs locally before they enter history.
-      const trimmed = compressor ? compressor.micro(result.content) : result.content;
+      const t0 = Date.now();
+      let result: { content: string; isError: boolean };
+      try {
+        result = await tool.execute(toolBlock.input, execCtx);
+      } catch (e) {
+        result = { content: `Unexpected error: ${e instanceof Error ? e.message : String(e)}`, isError: true };
+      }
+      const durationMs = Date.now() - t0;
 
-      resultBlocks.push({
-        type: "tool_result",
-        tool_use_id: tu.id,
-        content: trimmed,
-        is_error: result.isError,
-      });
-      yield {
-        type: "tool_result",
-        id: tu.id,
-        name: tu.name,
-        result: trimmed,
-        isError: result.isError,
-      };
+      if (hooks) {
+        await hooks.run("post-tool", { toolName: tool.name, input: toolBlock.input, output: result, durationMs });
+      }
+
+      const outputContent = compressor ? compressor.micro(result.content) : result.content;
+
+      const resultEv: AgentEvent = { type: "tool_result", name: tool.name, content: outputContent, isError: result.isError };
+      if (hooks) await hooks.run("on-event", { event: resultEv });
+      yield resultEv;
+
+      toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: outputContent, is_error: result.isError });
     }
 
-    history.push({
-      role: "user",
-      content: resultBlocks as ContentBlock[],
-    });
+    history.push({ role: "user", content: toolResultBlocks });
   }
 
-  yield { type: "error", message: `Exceeded max turns (${maxTurns})` };
+  const ev: AgentEvent = { type: "complete", text: finalText, usage: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens } };
+  if (hooks) await hooks.run("on-event", { event: ev });
+  yield ev;
 }

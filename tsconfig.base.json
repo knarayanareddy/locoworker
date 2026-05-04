@@ -19,7 +19,23 @@
     "sourceMap": true,
     "composite": true,
     "incremental": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@cowork/core": ["./packages/core/src/index.ts"],
+      "@cowork/core/*": ["./packages/core/src/*"],
+      "@cowork/graphify": ["./packages/graphify/src/index.ts"],
+      "@cowork/research": ["./packages/research/src/index.ts"],
+      "@cowork/kairos": ["./packages/kairos/src/index.ts"],
+      "@cowork/wiki": ["./packages/wiki/src/index.ts"],
+      "@cowork/mirofish": ["./packages/mirofish/src/index.ts"],
+      "@cowork/openclaw": ["./packages/openclaw/src/index.ts"],
+      "@cowork/hermes": ["./packages/hermes/src/index.ts"],
+      "@cowork/telemetry": ["./packages/telemetry/src/index.ts"],
+      "@cowork/analytics": ["./packages/analytics/src/index.ts"],
+      "@cowork/security": ["./packages/security/src/index.ts"],
+      "@cowork/cache": ["./packages/cache/src/index.ts"]
+    }
   },
   "exclude": ["node_modules", "dist", "build", "coverage"]
 }

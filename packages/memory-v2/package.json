@@ -1,0 +1,14 @@
+{
+  "name": "@cowork/memory-v2",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": {
+    "@cowork/core": "workspace:*",
+    "@cowork/graphify": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "bun-types": "latest"
+  }
+}

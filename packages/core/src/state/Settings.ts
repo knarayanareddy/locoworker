@@ -25,6 +25,10 @@ export type Settings = {
   loadProjectContext: boolean;
   /** When false, transcripts are not persisted to disk. */
   persistTranscripts: boolean;
+  /** Phase 5: MCP server configurations */
+  mcpServers?: import("../mcp/McpServerConfig.js").McpServerConfig[];
+  /** Phase 5: Enable Graphify knowledge-graph tools */
+  enableGraphify?: boolean;
 };
 
 export type ResolvedSettings = Settings & {
@@ -40,6 +44,7 @@ const DEFAULTS: Settings = {
   contextWindow: 100_000,
   loadProjectContext: true,
   persistTranscripts: true,
+  enableGraphify: false,
 };
 
 /**
@@ -79,6 +84,9 @@ export async function resolveSettings(
   if (env.COWORK_EMBEDDER_URL) fromEnv.embedderUrl = env.COWORK_EMBEDDER_URL;
   if (env.COWORK_EMBEDDER_MODEL) fromEnv.embedderModel = env.COWORK_EMBEDDER_MODEL;
   if (env.COWORK_EMBEDDER_API_KEY) fromEnv.embedderApiKey = env.COWORK_EMBEDDER_API_KEY;
+  if (env.COWORK_ENABLE_GRAPHIFY) {
+    fromEnv.enableGraphify = env.COWORK_ENABLE_GRAPHIFY === "true";
+  }
 
   const merged: Settings = {
     ...DEFAULTS,

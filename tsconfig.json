@@ -3,6 +3,14 @@
   "references": [
     { "path": "./packages/core" },
     { "path": "./packages/graphify" },
-    { "path": "./apps/cowork-cli" }
+    { "path": "./packages/mirofish" },
+    { "path": "./packages/openclaw" },
+    { "path": "./packages/hermes" },
+    { "path": "./packages/telemetry" },
+    { "path": "./packages/analytics" },
+    { "path": "./packages/security" },
+    { "path": "./packages/cache" },
+    { "path": "./apps/cowork-cli" },
+    { "path": "./apps/dashboard" }
   ]
 }

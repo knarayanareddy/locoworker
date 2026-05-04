@@ -1,100 +1,97 @@
-import { createInterface } from "node:readline/promises";
-import {
-  defaultRegistry,
-  queryLoop,
-  type ResolvedSettings,
-  type SlashCommandContext,
-  type SlashOutput,
-} from "@cowork/core";
+// apps/cowork-cli/src/repl.ts
+// PHASE 5: passes sessionManager + skills into slash command context.
+// Also adds `runTurn` to SlashCommandContext.
+
+import * as readline from "node:readline";
+import { queryLoop } from "@cowork/core";
+import { defaultRegistry } from "@cowork/core/commands";
+import type { SlashCommandContext } from "@cowork/core/commands";
 import { renderEvent } from "./render.js";
-import { makeApproval } from "./approval.js";
-import { buildSessionRuntime, refreshSystemPrompt, type SessionRuntime } from "./session.js";
+import type { SessionRuntime } from "./session.js";
+import type { CoworkSettings } from "@cowork/core";
 
 export async function runRepl(
-  settings: ResolvedSettings,
+  settings: ReturnType<typeof import("@cowork/core").resolveSettings>,
   opts: { yes: boolean; json: boolean },
+  runtime: SessionRuntime
 ): Promise<void> {
-  const runtime = await buildSessionRuntime(settings);
+  const { engine, memory, compressor, sessionManager, skills, hooks } = runtime;
+  let { tools, systemPrompt } = runtime;
+
   const registry = defaultRegistry();
-  const approval = makeApproval({ autoApprove: opts.yes });
 
-  process.stdout.write(
-    `\x1b[36mlocoworker\x1b[0m · ${runtime.engine.providerName}/${runtime.engine.model} · ${settings.permissionMode} · session ${runtime.sessionId}\n` +
-      `\x1b[2mtype your prompt, /help for commands\x1b[0m\n\n`,
-  );
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: true,
+    prompt: "\n\x1b[36mcowork>\x1b[0m ",
+  });
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  rl.prompt();
 
-  while (true) {
-    const line = (await rl.question("» ")).trim();
-    if (!line) continue;
+  const runTurn = async (prompt: string): Promise<void> => {
+    for await (const event of queryLoop(prompt, {
+      engine,
+      systemPrompt,
+      tools,
+      maxTurns: settings.maxTurns,
+      maxTokens: settings.maxTokens,
+      permissionLevel: settings.permissionLevel,
+      requestApproval: opts.yes
+        ? async () => true
+        : async (name, input) => {
+            process.stdout.write(
+              `\n\x1b[33m[approval]\x1b[0m Allow \x1b[1m${name}\x1b[0m? Input: ${JSON.stringify(input).slice(0, 120)}\n[y/N] `
+            );
+            return new Promise((resolve) => {
+              const handler = (line: string) => {
+                rl.off("line", handler);
+                resolve(line.trim().toLowerCase() === "y");
+              };
+              rl.on("line", handler);
+            });
+          },
+      compressor,
+      hooks,
+    })) {
+      renderEvent(event, opts.json);
 
-    if (line.startsWith("/")) {
-      const slashCtx: SlashCommandContext = {
-        memory: runtime.memory,
-        engine: runtime.engine,
-        compressor: runtime.compressor,
-        sessionId: runtime.sessionId,
-        workingDirectory: settings.workingDirectory,
-      };
-      const result = await registry.dispatch(line, slashCtx);
-      if (result) {
-        const handled = await handleSlashOutput(result);
-        if (handled === "exit") break;
-        await refreshSystemPrompt(runtime, settings);
+      if (event.type === "complete") {
+        await memory.appendTranscript(runtime.sessionId, "user", prompt);
+        await memory.appendTranscript(runtime.sessionId, "assistant", event.text);
+        // Refresh system prompt so memory index reflects new saves
+        systemPrompt = await runtime.refreshSystemPrompt();
       }
-      continue;
+    }
+  };
+
+  for await (const line of rl) {
+    const trimmed = line.trim();
+    if (!trimmed) { rl.prompt(); continue; }
+
+    const ctx: SlashCommandContext = {
+      sessionId: runtime.sessionId,
+      workingDirectory: settings.workingDirectory ?? process.cwd(),
+      memory,
+      engine,
+      compressor,
+      sessionManager,
+      skills,
+      print: (msg) => console.log(msg),
+      runTurn,
+    };
+
+    if (trimmed.startsWith("/")) {
+      await registry.dispatch(trimmed, ctx);
+    } else {
+      await runTurn(trimmed);
     }
 
-    await runUserTurn(line, runtime, settings, approval, opts);
-    await refreshSystemPrompt(runtime, settings);
+    rl.prompt();
   }
 
-  rl.close();
-}
-
-async function handleSlashOutput(output: SlashOutput): Promise<"exit" | "ok"> {
-  switch (output.type) {
-    case "exit":
-      return "exit";
-    case "clear":
-      process.stdout.write("\x1b[2J\x1b[H");
-      return "ok";
-    case "text":
-      process.stdout.write(output.text + "\n");
-      return "ok";
+  // Disconnect MCP clients on exit
+  for (const client of runtime.mcpClients) {
+    await client.disconnect().catch(() => {});
   }
-}
-
-async function runUserTurn(
-  prompt: string,
-  runtime: SessionRuntime,
-  settings: ResolvedSettings,
-  approval: ReturnType<typeof makeApproval>,
-  opts: { json: boolean },
-): Promise<void> {
-  if (settings.persistTranscripts) {
-    await runtime.memory.appendTranscript(runtime.sessionId, "user", prompt);
-  }
-
-  let assistantBuffer = "";
-
-  for await (const event of queryLoop(prompt, {
-    engine: runtime.engine,
-    tools: runtime.tools,
-    systemPrompt: runtime.systemPrompt,
-    workingDirectory: settings.workingDirectory,
-    permissionLevel: settings.permissionLevel,
-    maxTurns: settings.maxTurns,
-    maxTokens: settings.maxTokens,
-    requestApproval: approval,
-    compressor: runtime.compressor,
-  })) {
-    renderEvent(event, { json: opts.json });
-    if (event.type === "text") assistantBuffer += event.text;
-    if (event.type === "complete" && settings.persistTranscripts && assistantBuffer.trim()) {
-      await runtime.memory.appendTranscript(runtime.sessionId, "assistant", assistantBuffer);
-    }
-  }
-  process.stdout.write("\n");
 }

@@ -8,8 +8,12 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck": "tsc -b",
-    "cowork": "bun run apps/cowork-cli/src/index.ts"
+    "cowork": "bun run apps/cowork-cli/src/index.ts",
+    "dashboard": "bun run apps/dashboard/src/server.ts",
+    "hermes": "bun run packages/hermes/src/bin.ts",
+    "typecheck": "tsc --build --noEmit",
+    "test": "bun test",
+    "build:all": "bun run --filter='*' build"
   },
   "devDependencies": {
     "typescript": "^5.5.4",

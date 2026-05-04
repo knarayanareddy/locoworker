@@ -1,0 +1,1 @@
+{"version":3,"file":"ReportGenerator.d.ts","sourceRoot":"","sources":["ReportGenerator.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,eAAe,EAAE,gBAAgB,EAAY,MAAM,SAAS,CAAC;AAG3E,qBAAa,eAAe;IAC1B,OAAO,CAAC,MAAM,CAAc;gBAEhB,KAAK,EAAE,eAAe;IAQ5B,QAAQ,CAAC,KAAK,EAAE,eAAe,GAAG,OAAO,CAAC,gBAAgB,CAAC;IAwFjE,OAAO,CAAC,yBAAyB;IAYjC,OAAO,CAAC,cAAc;CA8CvB"}

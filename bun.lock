@@ -18,6 +18,12 @@
       },
       "dependencies": {
         "@cowork/core": "workspace:*",
+        "@cowork/graphify": "workspace:*",
+        "@cowork/kairos": "workspace:*",
+        "@cowork/orchestrator": "workspace:*",
+        "@cowork/plugins": "workspace:*",
+        "@cowork/research": "workspace:*",
+        "@cowork/wiki": "workspace:*",
       },
     },
     "packages/core": {
@@ -25,14 +31,68 @@
       "version": "0.1.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.30.1",
+        "@cowork/graphify": "workspace:*",
         "openai": "^4.67.0",
       },
     },
     "packages/graphify": {
       "name": "@cowork/graphify",
       "version": "0.1.0",
+    },
+    "packages/kairos": {
+      "name": "@cowork/kairos",
+      "version": "0.1.0",
       "dependencies": {
         "@cowork/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.4.0",
+      },
+    },
+    "packages/orchestrator": {
+      "name": "@cowork/orchestrator",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cowork/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.4.0",
+      },
+    },
+    "packages/plugins": {
+      "name": "@cowork/plugins",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cowork/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.4.0",
+      },
+    },
+    "packages/research": {
+      "name": "@cowork/research",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cowork/core": "workspace:*",
+        "@cowork/wiki": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.4.0",
+      },
+    },
+    "packages/wiki": {
+      "name": "@cowork/wiki",
+      "version": "0.1.0",
+      "dependencies": {
+        "@cowork/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "typescript": "^5.4.0",
       },
     },
   },
@@ -44,6 +104,16 @@
     "@cowork/core": ["@cowork/core@workspace:packages/core"],
 
     "@cowork/graphify": ["@cowork/graphify@workspace:packages/graphify"],
+
+    "@cowork/kairos": ["@cowork/kairos@workspace:packages/kairos"],
+
+    "@cowork/orchestrator": ["@cowork/orchestrator@workspace:packages/orchestrator"],
+
+    "@cowork/plugins": ["@cowork/plugins@workspace:packages/plugins"],
+
+    "@cowork/research": ["@cowork/research@workspace:packages/research"],
+
+    "@cowork/wiki": ["@cowork/wiki@workspace:packages/wiki"],
 
     "@types/bun": ["@types/bun@1.3.13", "", { "dependencies": { "bun-types": "1.3.13" } }, "sha512-9fqXWk5YIHGGnUau9TEi+qdlTYDAnOj+xLCmSTwXfAIqXr2x4tytJb43E9uCvt09zJURKXwAtkoH4nLQfzeTXw=="],
 

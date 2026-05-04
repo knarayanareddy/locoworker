@@ -1,0 +1,24 @@
+{
+  "name": "@cowork/dashboard",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/server.ts",
+  "bin": {
+    "cowork-dashboard": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "bun run src/server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cowork/core": "workspace:*",
+    "@cowork/analytics": "workspace:*",
+    "@cowork/telemetry": "workspace:*",
+    "@cowork/security": "workspace:*",
+    "@cowork/wiki": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "bun-types": "latest"
+  }
+}

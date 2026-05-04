@@ -1,0 +1,19 @@
+{
+  "name": "@cowork/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "electron .",
+    "build": "electron-builder --mac --win --linux",
+    "typecheck": "tsc --noEmit"
+  },
+  "main": "src/main.js",
+  "dependencies": {
+    "@cowork/core": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.4.0"
+  }
+}

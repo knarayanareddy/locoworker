@@ -1,0 +1,18 @@
+{
+  "name": "@cowork/mirofish",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cowork/core": "workspace:*",
+    "@cowork/graphify": "workspace:*",
+    "@cowork/wiki": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "bun-types": "latest"
+  }
+}

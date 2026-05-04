@@ -1,0 +1,16 @@
+{
+  "name": "@cowork/templates",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "bin": {
+    "cowork-init": "./src/bin.ts"
+  },
+  "dependencies": {
+    "@cowork/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "bun-types": "latest"
+  }
+}
