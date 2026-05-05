@@ -1,43 +1,45 @@
 // packages/core/src/session/SessionManager.ts
-// Persists and retrieves named sessions under ~/.cowork/projects/<project>/sessions/
 
-import { readFile, writeFile, readdir, mkdir, unlink } from "node:fs/promises";
-import { join, basename } from "node:path";
+import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { resolve } from "node:path";
-import type { SessionRecord, SessionStatus } from "./SessionRecord.js";
-
-function sanitize(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 64);
-}
+import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { getCoworkHome } from "../state/Settings.js";
+import type {
+  SessionRecord,
+  CreateSessionOptions,
+  UpdateSessionOptions,
+} from "./types.js";
 
 export class SessionManager {
-  private readonly sessionsDir: string;
+  private sessionsDir: string;
 
   constructor(projectRoot: string) {
-    const key = sanitize(basename(resolve(projectRoot)));
-    this.sessionsDir = join(homedir(), ".cowork", "projects", key, "sessions");
+    // Sessions are stored globally, not per-project, so you can
+    // --resume by ID from any directory.
+    this.sessionsDir = join(getCoworkHome(), "sessions");
   }
 
   async init(): Promise<void> {
     await mkdir(this.sessionsDir, { recursive: true });
   }
 
-  /** Create and persist a new session record. */
-  async create(
-    id: string,
-    opts: Pick<SessionRecord, "name" | "projectRoot" | "provider" | "model">
-  ): Promise<SessionRecord> {
+  private sessionPath(id: string): string {
+    return join(this.sessionsDir, `${id}.json`);
+  }
+
+  async create(options: CreateSessionOptions): Promise<SessionRecord> {
     const now = new Date().toISOString();
     const record: SessionRecord = {
-      id,
-      name: opts.name,
-      projectRoot: opts.projectRoot,
-      provider: opts.provider,
-      model: opts.model,
+      id: options.id,
+      name: options.name,
+      projectRoot: options.projectRoot,
+      provider: options.provider,
+      model: options.model,
+      permissionMode: options.permissionMode,
+      status: "active",
       createdAt: now,
       updatedAt: now,
-      status: "active",
       totalInputTokens: 0,
       totalOutputTokens: 0,
       turns: 0,
@@ -46,68 +48,79 @@ export class SessionManager {
     return record;
   }
 
+  async update(id: string, options: UpdateSessionOptions): Promise<SessionRecord | null> {
+    const record = await this.get(id);
+    if (!record) return null;
+
+    const updated: SessionRecord = {
+      ...record,
+      ...options,
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (options.status === "complete" || options.status === "error") {
+      updated.completedAt = updated.updatedAt;
+    }
+
+    await this.save(updated);
+    return updated;
+  }
+
   async get(id: string): Promise<SessionRecord | null> {
+    const path = this.sessionPath(id);
+    if (!existsSync(path)) return null;
     try {
-      const raw = await readFile(this.filePath(id), "utf8");
+      const raw = await readFile(path, "utf-8");
       return JSON.parse(raw) as SessionRecord;
     } catch {
       return null;
     }
   }
 
-  async save(record: SessionRecord): Promise<void> {
-    await mkdir(this.sessionsDir, { recursive: true });
-    await writeFile(this.filePath(record.id), JSON.stringify(record, null, 2), "utf8");
-  }
-
-  async update(
-    id: string,
-    patch: Partial<Omit<SessionRecord, "id" | "createdAt">>
-  ): Promise<SessionRecord | null> {
-    const existing = await this.get(id);
-    if (!existing) return null;
-    const updated: SessionRecord = {
-      ...existing,
-      ...patch,
-      updatedAt: new Date().toISOString(),
-    };
-    await this.save(updated);
-    return updated;
-  }
-
-  async list(status?: SessionStatus): Promise<SessionRecord[]> {
-    let files: string[];
+  async list(limit = 20): Promise<SessionRecord[]> {
     try {
-      files = await readdir(this.sessionsDir);
+      const files = await readdir(this.sessionsDir);
+      const jsonFiles = files.filter((f) => f.endsWith(".json")).slice(-limit);
+      const records = await Promise.all(
+        jsonFiles.map(async (f) => {
+          try {
+            const raw = await readFile(join(this.sessionsDir, f), "utf-8");
+            return JSON.parse(raw) as SessionRecord;
+          } catch {
+            return null;
+          }
+        })
+      );
+      return records
+        .filter((r): r is SessionRecord => r !== null)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     } catch {
       return [];
     }
-    const records: SessionRecord[] = [];
-    for (const f of files) {
-      if (!f.endsWith(".json")) continue;
-      try {
-        const raw = await readFile(join(this.sessionsDir, f), "utf8");
-        const r = JSON.parse(raw) as SessionRecord;
-        if (!status || r.status === status) records.push(r);
-      } catch {
-        continue;
-      }
-    }
-    return records.sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
+  }
+
+  async findByName(name: string): Promise<SessionRecord | null> {
+    const all = await this.list(200);
+    return all.find((r) => r.name === name) ?? null;
   }
 
   async delete(id: string): Promise<boolean> {
+    const path = this.sessionPath(id);
+    if (!existsSync(path)) return false;
     try {
-      await unlink(this.filePath(id));
+      const { unlink } = await import("node:fs/promises");
+      await unlink(path);
       return true;
     } catch {
       return false;
     }
   }
 
-  private filePath(id: string): string {
-    return join(this.sessionsDir, `${sanitize(id)}.json`);
+  private async save(record: SessionRecord): Promise<void> {
+    await writeFile(
+      this.sessionPath(record.id),
+      JSON.stringify(record, null, 2),
+      "utf-8"
+    );
   }
 }

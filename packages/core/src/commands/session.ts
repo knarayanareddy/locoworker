@@ -6,9 +6,8 @@ import type { SlashCommand } from "./SlashCommand.js";
 export const sessionListCommand: SlashCommand = {
   name: "session",
   description: "List recent sessions. Usage: /session [list|show <id>|delete <id>]",
-  async execute(args, ctx) {
-    const parts = args.trim().split(/\s+/).filter(Boolean);
-    const sub = parts[0] ?? "list";
+  async execute(args: string[], ctx) {
+    const sub = args[0] ?? "list";
 
     if (!ctx.sessionManager) {
       ctx.print("Session manager not available in this context.");
@@ -33,7 +32,7 @@ export const sessionListCommand: SlashCommand = {
     }
 
     if (sub === "show") {
-      const id = parts[1];
+      const id = args[1];
       if (!id) { ctx.print("Usage: /session show <id>"); return; }
       const session = await ctx.sessionManager.get(id);
       if (!session) { ctx.print(`Session "${id}" not found.`); return; }
@@ -42,7 +41,7 @@ export const sessionListCommand: SlashCommand = {
     }
 
     if (sub === "delete") {
-      const id = parts[1];
+      const id = args[1];
       if (!id) { ctx.print("Usage: /session delete <id>"); return; }
       const deleted = await ctx.sessionManager.delete(id);
       ctx.print(deleted ? `Session "${id}" deleted.` : `Session "${id}" not found.`);

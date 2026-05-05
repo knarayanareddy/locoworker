@@ -9,10 +9,16 @@
   "dependencies": {
     "@cowork/core": "workspace:*",
     "@cowork/graphify": "workspace:*",
+    "@cowork/telemetry": "workspace:*",
+    "@cowork/analytics": "workspace:*",
+    "@cowork/security": "workspace:*",
     "@cowork/kairos": "workspace:*",
     "@cowork/wiki": "workspace:*",
     "@cowork/research": "workspace:*",
     "@cowork/orchestrator": "workspace:*",
+    "@cowork/mirofish": "workspace:*",
+    "@cowork/openclaw": "workspace:*",
+    "@cowork/hermes": "workspace:*",
     "@cowork/plugins": "workspace:*"
   }
 }

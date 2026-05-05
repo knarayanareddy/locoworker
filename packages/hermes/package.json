@@ -2,16 +2,19 @@
   "name": "@cowork/hermes",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
   "bin": {
-    "hermes": "./src/bin.ts"
+    "hermes": "./src/start.ts"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./server": "./dist/server/index.js",
+    "./transport": "./dist/transport/index.js"
   },
   "dependencies": {
     "@cowork/core": "workspace:*",
-    "@cowork/wiki": "workspace:*"
+    "@cowork/security": "workspace:*"
   },
-  "devDependencies": {
-    "typescript": "^5.4.0",
-    "bun-types": "latest"
-  }
+  "devDependencies": { "typescript": "^5.4.0", "@types/bun": "latest" }
 }

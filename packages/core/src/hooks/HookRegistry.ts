@@ -1,42 +1,66 @@
 // packages/core/src/hooks/HookRegistry.ts
-// Registry for lifecycle hooks. Multiple hooks per event are called in registration order.
 
-import type { HookMap, HookName, HookFn } from "./HookTypes.js";
+import type {
+  HookName,
+  HookFn,
+  PreToolHookFn,
+  PostToolHookFn,
+  OnCompleteHookFn,
+  OnTurnHookFn,
+  OnEventHookFn,
+  OnErrorHookFn,
+  HookContext,
+} from "./types.js";
+import type { AgentEvent } from "../types.js";
 
 export class HookRegistry {
-  private readonly hooks: { [K in HookName]?: Array<HookFn<unknown>> } = {};
+  private hooks = new Map<HookName, HookFn[]>();
 
-  on<K extends HookName>(event: K, fn: HookFn<HookMap[K]>): () => void {
-    if (!this.hooks[event]) this.hooks[event] = [];
-    this.hooks[event]!.push(fn as HookFn<unknown>);
-    return () => this.off(event, fn);
+  register(name: HookName, fn: HookFn): void {
+    const existing = this.hooks.get(name) ?? [];
+    this.hooks.set(name, [...existing, fn]);
   }
 
-  off<K extends HookName>(event: K, fn: HookFn<HookMap[K]>): void {
-    const list = this.hooks[event];
-    if (!list) return;
-    const idx = list.indexOf(fn as HookFn<unknown>);
-    if (idx !== -1) list.splice(idx, 1);
+  async runPreTool(toolName: string, input: unknown, ctx: HookContext): Promise<void> {
+    const fns = (this.hooks.get("pre-tool") ?? []) as PreToolHookFn[];
+    for (const fn of fns) await fn(toolName, input, ctx);
   }
 
-  /** Run all hooks for an event. Returns false if any hook returned false (cancellation). */
-  async run<K extends HookName>(event: K, ctx: Parameters<HookMap[K]>[0]): Promise<boolean> {
-    const list = this.hooks[event];
-    if (!list || list.length === 0) return true;
-    for (const fn of list) {
-      const result = await fn(ctx as unknown);
-      if (result === false) return false;
-    }
-    return true;
+  async runPostTool(
+    toolName: string,
+    input: unknown,
+    result: { content: string; isError: boolean },
+    ctx: HookContext
+  ): Promise<void> {
+    const fns = (this.hooks.get("post-tool") ?? []) as PostToolHookFn[];
+    for (const fn of fns) await fn(toolName, input, result, ctx);
   }
 
-  clear(event?: HookName): void {
-    if (event) {
-      delete this.hooks[event];
+  async runOnComplete(ctx: HookContext): Promise<void> {
+    const fns = (this.hooks.get("on-complete") ?? []) as OnCompleteHookFn[];
+    for (const fn of fns) await fn(ctx);
+  }
+
+  async runOnTurn(ctx: HookContext): Promise<void> {
+    const fns = (this.hooks.get("on-turn") ?? []) as OnTurnHookFn[];
+    for (const fn of fns) await fn(ctx);
+  }
+
+  async runOnEvent(event: AgentEvent, ctx: HookContext): Promise<void> {
+    const fns = (this.hooks.get("on-event") ?? []) as OnEventHookFn[];
+    for (const fn of fns) await fn(event, ctx);
+  }
+
+  async runOnError(error: Error, ctx: HookContext): Promise<void> {
+    const fns = (this.hooks.get("on-error") ?? []) as OnErrorHookFn[];
+    for (const fn of fns) await fn(error, ctx);
+  }
+
+  clear(name?: HookName): void {
+    if (name) {
+      this.hooks.delete(name);
     } else {
-      for (const k of Object.keys(this.hooks) as HookName[]) {
-        delete this.hooks[k];
-      }
+      this.hooks.clear();
     }
   }
 }

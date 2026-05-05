@@ -91,10 +91,10 @@ export class OpenAIStreamProvider implements StreamingProvider {
         yield {
           type: "stop",
           stopReason: finishReason,
-          usage: chunk.usage
+          usage: (chunk as any).usage
             ? {
-                inputTokens: chunk.usage.prompt_tokens,
-                outputTokens: chunk.usage.completion_tokens,
+                inputTokens: (chunk as any).usage.prompt_tokens,
+                outputTokens: (chunk as any).usage.completion_tokens,
               }
             : undefined,
         };

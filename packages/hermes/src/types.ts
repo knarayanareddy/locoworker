@@ -1,9 +1,9 @@
 export interface HermesConfig {
   projectRoot: string;
+  tools?: string[];          // tool names to expose (all if omitted)
   transport: "stdio" | "sse";
-  port?: number;
-  tools?: string[]; // list of tool names to expose
-  authToken?: string;
+  port?: number;             // for SSE transport (default 3722)
+  authToken?: string;        // optional Bearer token for SSE
   verbose?: boolean;
 }
 

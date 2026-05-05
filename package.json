@@ -8,17 +8,36 @@
     "apps/*"
   ],
   "scripts": {
-    "cowork": "bun run apps/cowork-cli/src/index.ts",
+    "typecheck":      "tsc -b",
+    "cowork":         "bun run apps/cowork-cli/src/index.ts",
+    "kairos":         "bun run apps/kairos-daemon/src/index.ts",
+    "hermes":         "bun run packages/hermes/src/start.ts",
+    "hermes:stdio":   "COWORK_HERMES_TRANSPORT=stdio bun run packages/hermes/src/start.ts",
+    "hermes:sse":     "COWORK_HERMES_TRANSPORT=sse bun run packages/hermes/src/start.ts",
+    "eval":           "bun run packages/core/src/eval/run.ts",
+    "build:graph":    "bun run scripts/build-graph.ts",
+    "dev":            "bun run cowork",
     "dashboard": "bun run apps/dashboard/src/server.ts",
-    "hermes": "bun run packages/hermes/src/bin.ts",
-    "typecheck": "tsc --build --noEmit",
     "test": "bun test",
     "build:all": "bun run --filter='*' build"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
     "@types/node": "^22.5.0",
-    "@types/bun": "^1.1.0"
+    "@types/bun": "^1.1.0",
+    "@cowork/core": "workspace:*",
+    "@cowork/graphify": "workspace:*",
+    "@cowork/kairos": "workspace:*",
+    "@cowork/hermes": "workspace:*",
+    "@cowork/orchestrator": "workspace:*",
+    "@cowork/research": "workspace:*",
+    "@cowork/mirofish": "workspace:*",
+    "@cowork/openclaw": "workspace:*",
+    "@cowork/plugins": "workspace:*",
+    "@cowork/wiki": "workspace:*",
+    "@cowork/security": "workspace:*",
+    "@cowork/telemetry": "workspace:*",
+    "@cowork/analytics": "workspace:*"
   },
   "engines": {
     "bun": ">=1.1.0"

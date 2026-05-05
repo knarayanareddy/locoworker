@@ -8,6 +8,7 @@ export class ReportGenerator {
     const cfg = resolveProvider({
       provider: state.config.modelProvider as any,
       model: state.config.model,
+      env: process.env as any,
     });
     this.engine = new QueryEngine(cfg);
   }
@@ -15,13 +16,16 @@ export class ReportGenerator {
   async generate(state: SimulationState): Promise<SimulationReport> {
     const { agents, actions, config } = state;
 
+    // ── Belief distribution ──────────────────────────────────────────────────
     const dist = this.computeBeliefDistribution(agents);
 
+    // ── Top influencers ──────────────────────────────────────────────────────
     const topInfluencers = agents
       .sort((a, b) => b.influenceScore * b.followedBy.length - a.influenceScore * a.followedBy.length)
       .slice(0, 5)
       .map((a) => ({ name: a.name, personality: a.personality, beliefScore: a.beliefScore }));
 
+    // ── Key moments: most impactful beliefDelta actions ──────────────────────
     const keyMoments = actions
       .sort((a, b) => Math.abs(b.beliefDelta) - Math.abs(a.beliefDelta))
       .slice(0, 8)
@@ -30,6 +34,7 @@ export class ReportGenerator {
         return `Round ${a.round} — ${agent?.name ?? a.agentId} (${agent?.personality}): "${a.content}" [Δ${a.beliefDelta > 0 ? "+" : ""}${(a.beliefDelta * 100).toFixed(0)}%]`;
       });
 
+    // ── Model-synthesized narrative + prediction ──────────────────────────────
     const actionSample = actions
       .slice(0, 80)
       .map((a) => {
@@ -124,9 +129,9 @@ export class ReportGenerator {
     const total = state.agents.length;
     return [
       `# MiroFish Simulation Report`,
-      `**ID:** ${state.id}`,
-      `**Completed:** ${state.completedAt ?? "in progress"}`,
-      `**Platform:** ${state.config.platform} | **Agents:** ${total} | **Rounds:** ${state.config.rounds}`,
+      `**ID:** \${state.id}`,
+      `**Completed:** \${state.completedAt ?? "in progress"}`,
+      `**Platform:** \${state.config.platform} | **Agents:** \${total} | **Rounds:** \${state.config.rounds}`,
       "",
       "## Scenario",
       state.config.scenarioPrompt,
@@ -138,8 +143,8 @@ export class ReportGenerator {
       prediction,
       "",
       "## Final Belief Distribution",
-      `| Sentiment | Count | % |`,
-      `|-----------|-------|---|`,
+      "| Sentiment | Count | % |",
+      "|-----------|-------|---|",
       `| Strongly For | ${dist.stronglyFor} | ${pct(dist.stronglyFor, total)} |`,
       `| Mildly For | ${dist.mildlyFor} | ${pct(dist.mildlyFor, total)} |`,
       `| Neutral | ${dist.neutral} | ${pct(dist.neutral, total)} |`,

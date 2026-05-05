@@ -1,6 +1,11 @@
 import type { SimAgent, AgentPersonality, SimulationConfig } from "./types";
 import { QueryEngine, resolveProvider } from "@cowork/core";
 
+const PERSONALITIES: AgentPersonality[] = [
+  "adopter", "skeptic", "neutral", "influencer",
+  "expert", "troll", "lurker",
+];
+
 const PERSONALITY_DISTRIBUTION: Record<AgentPersonality, number> = {
   adopter: 0.15,
   skeptic: 0.20,
@@ -18,6 +23,7 @@ export class AgentFactory {
     const providerCfg = resolveProvider({
       provider: config.modelProvider as any,
       model: config.model,
+      env: process.env as any,
     });
     this.engine = new QueryEngine(providerCfg);
   }
@@ -26,9 +32,11 @@ export class AgentFactory {
     seedDocument: string,
     count: number
   ): Promise<SimAgent[]> {
+    // Determine personality mix
     const mix = this.buildPersonalityMix(count);
     const agents: SimAgent[] = [];
 
+    // Generate agent bios in one batch call for efficiency
     const systemPrompt = [
       "You are generating diverse AI simulation personas for a social simulation.",
       "Each persona should feel realistic, have a distinct voice, and relate to the topic.",
@@ -66,9 +74,11 @@ export class AgentFactory {
       const match = text.match(/\[[\s\S]*\]/);
       personas = match ? JSON.parse(match[0]) : [];
     } catch {
+      // Fallback: generate deterministic personas
       personas = this.fallbackPersonas(count, mix);
     }
 
+    // Build SimAgent objects with network connections
     for (let i = 0; i < personas.length && i < count; i++) {
       const p = personas[i];
       const agent: SimAgent = {
@@ -85,6 +95,7 @@ export class AgentFactory {
       agents.push(agent);
     }
 
+    // Wire follow network: influencers get more followers
     this.wireNetwork(agents);
     return agents;
   }
@@ -97,12 +108,14 @@ export class AgentFactory {
       mix[p as AgentPersonality] = n;
       assigned += n;
     }
-    mix.neutral += total - assigned;
+    // Top up neutrals if rounding left gaps
+    mix.neutral = (mix.neutral ?? 0) + (total - assigned);
     return mix;
   }
 
   private wireNetwork(agents: SimAgent[]): void {
     for (const agent of agents) {
+      // Each agent follows 2–8 others with preference for influencers
       const followCount = 2 + Math.floor(Math.random() * 6);
       const candidates = agents
         .filter((a) => a.id !== agent.id)

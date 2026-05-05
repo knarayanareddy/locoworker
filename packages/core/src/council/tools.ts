@@ -1,5 +1,6 @@
-import type { ToolDefinition, ToolContext } from "../tools/types";
-import { CouncilDebate, type CouncilAgent } from "./CouncilDebate";
+import { PermissionLevel } from "../permissions/PermissionLevel.js";
+import type { ToolDefinition, ExecutionContext as ToolContext } from "../Tool.js";
+import { CouncilDebate, type CouncilAgent } from "./CouncilDebate.js";
 
 export const CouncilRun: ToolDefinition = {
   name: "CouncilRun",
@@ -35,7 +36,7 @@ export const CouncilRun: ToolDefinition = {
     },
     required: ["question"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(
     input: {
       question: string;

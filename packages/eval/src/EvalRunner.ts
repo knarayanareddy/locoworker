@@ -10,7 +10,7 @@ import type {
 import { queryLoop, resolveSettings, DEFAULT_TOOLS, type AgentEvent } from "@cowork/core";
 import { estimateCost } from "@cowork/analytics";
 import { mkdir, rm } from "node:fs/promises";
-import path from "path";
+import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 
@@ -127,9 +127,10 @@ export class EvalRunner {
         systemPrompt: evalCase.systemPromptOverride ?? "You are a helpful AI assistant.",
         tools: DEFAULT_TOOLS,
         projectRoot: workingDir,
+        history: [],
       })) {
         events.push(event as AgentEvent);
-        if (event.type === "text") fullText += (event as any).text ?? "";
+        if (event.type === "text") fullText += event.text ?? "";
         if (event.type === "tool_call") toolsCalled.push((event as any).toolName);
         if (event.type === "turn_start") turns++;
         if (event.type === "complete") {

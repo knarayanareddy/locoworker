@@ -1,66 +1,99 @@
-import type { SimulationConfig, SimulationReport, SimAction } from "./types";
+import type { SimulationConfig, SimulationReport, SimulationState } from "./types";
 import { SimulationEngine } from "./SimulationEngine";
 import { ReportGenerator } from "./ReportGenerator";
 import { MemorySystem } from "@cowork/core";
-import { LLMWiki } from "@cowork/wiki";
-import path from "path";
+import { WikiStore } from "@cowork/wiki";
+import path from "node:path";
+import { mkdir } from "node:fs/promises";
 
-export interface MiroFishOptions {
+export interface StudioConfig {
   projectRoot: string;
+  outputDir?: string;
+  saveToWiki?: boolean;
+  saveToMemory?: boolean;
 }
 
 export class MiroFishStudio {
-  private projectRoot: string;
+  private studioConfig: StudioConfig;
 
-  constructor(options: MiroFishOptions) {
-    this.projectRoot = options.projectRoot;
+  constructor(config: StudioConfig) {
+    this.studioConfig = {
+      outputDir: path.join(config.projectRoot, "mirofish-out"),
+      saveToWiki: true,
+      saveToMemory: true,
+      ...config,
+    };
   }
 
   async run(
-    config: SimulationConfig,
-    onRound?: (round: number, actions: SimAction[]) => void
+    simConfig: SimulationConfig,
+    onProgress?: (round: number, actionCount: number) => void
   ): Promise<SimulationReport> {
-    const engine = new SimulationEngine(config);
-    const state = await engine.run(onRound);
+    await mkdir(this.studioConfig.outputDir!, { recursive: true });
 
-    const generator = new ReportGenerator(state);
-    const report = await generator.generate(state);
+    const engine = new SimulationEngine(simConfig);
+    const state = await engine.run((round, actions) => {
+      onProgress?.(round, actions.length);
+    });
 
-    // Persist results
-    if (process.env.COWORK_MIROFISH_SAVE_MEMORY !== "false") {
-      await this.saveToMemory(report);
+    if (state.status === "failed") {
+      throw new Error(`Simulation failed: ${state.error}`);
     }
-    if (process.env.COWORK_MIROFISH_SAVE_WIKI !== "false") {
-      await this.saveToWiki(report);
-    }
+
+    const reporter = new ReportGenerator(state);
+    const report = await reporter.generate(state);
+
+    // Persist outputs
+    await this.persistReport(report, state);
+    await this.persistToWikiAndMemory(report, simConfig);
 
     return report;
   }
 
-  private async saveToMemory(report: SimulationReport): Promise<void> {
-    const memory = new MemorySystem(this.projectRoot);
-    await memory.save({
-      name: `mirofish-report-${report.id}`,
-      content: report.prediction,
-      type: "fact",
-      confidence: 0.7,
-      metadata: {
-        source: "mirofish",
-        scenario: report.scenarioPrompt,
-        reportId: report.id,
-      },
-    });
+  private async persistReport(
+    report: SimulationReport,
+    state: SimulationState
+  ): Promise<void> {
+    const base = path.join(this.studioConfig.outputDir!, report.id);
+
+    await Bun.write(`${base}-report.md`, report.rawMarkdown);
+    await Bun.write(`${base}-state.json`, JSON.stringify(state, null, 2));
+    await Bun.write(`${base}-report.json`, JSON.stringify(report, null, 2));
   }
 
-  private async saveToWiki(report: SimulationReport): Promise<void> {
-    try {
-      const wiki = new LLMWiki({ projectRoot: this.projectRoot });
-      const slug = `mirofish-report-${report.id.slice(0, 8)}`;
-      await wiki.savePage({
-        slug,
-        title: `MiroFish: ${report.scenarioPrompt.slice(0, 50)}`,
-        content: report.rawMarkdown,
-      });
-    } catch { /* wiki might not be initialized */ }
+  private async persistToWikiAndMemory(
+    report: SimulationReport,
+    config: SimulationConfig
+  ): Promise<void> {
+    if (this.studioConfig.saveToWiki) {
+      try {
+        const wiki = new WikiStore(this.studioConfig.projectRoot);
+        await wiki.upsertPage(`sim-${report.id.slice(0, 8)}`, {
+          title: `Simulation: ${report.scenarioPrompt.slice(0, 60)}`,
+          body: report.rawMarkdown,
+          tags: ["mirofish", "simulation", config.platform],
+          sourceMemoryIds: [],
+        });
+      } catch { /* best effort */ }
+    }
+
+    if (this.studioConfig.saveToMemory) {
+      try {
+        const memory = new MemorySystem({ projectRoot: this.studioConfig.projectRoot });
+        await memory.save({
+          type: "reference",
+          name: `mirofish-sim-${report.id.slice(0, 8)}`,
+          description: `MiroFish simulation: ${report.scenarioPrompt.slice(0, 80)}`,
+          body: [
+            `Prediction: ${report.prediction}`,
+            `Narrative: ${report.dominantNarrative}`,
+            `Agents: ${report.agentCount} | Rounds: ${report.rounds} | Actions: ${report.totalActions}`,
+          ].join("\n"),
+          tags: ["mirofish", "simulation"],
+          confidence: 0.85,
+          sessionId: null,
+        });
+      } catch { /* best effort */ }
+    }
   }
 }

@@ -4,6 +4,19 @@
     "outDir": "./dist",
     "rootDir": "./src"
   },
-  "references": [{ "path": "../../packages/core" }],
-  "include": ["src/**/*"]
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/graphify" },
+    { "path": "../../packages/telemetry" },
+    { "path": "../../packages/analytics" },
+    { "path": "../../packages/security" },
+    { "path": "../../packages/kairos" },
+    { "path": "../../packages/wiki" },
+    { "path": "../../packages/research" },
+    { "path": "../../packages/orchestrator" },
+    { "path": "../../packages/mirofish" },
+    { "path": "../../packages/openclaw" },
+    { "path": "../../packages/hermes" }
+  ]
 }

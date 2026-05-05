@@ -23,6 +23,16 @@ export class Graph {
     if (!this.incoming.has(node.id)) this.incoming.set(node.id, []);
     return node;
   }
+  
+  nodeCount(): number {
+    return this.nodesById.size;
+  }
+
+  edgeCount(): number {
+    let count = 0;
+    for (const list of this.outgoing.values()) count += list.length;
+    return count;
+  }
 
   addEdge(edge: GraphEdge): void {
     if (!this.nodesById.has(edge.source)) return;

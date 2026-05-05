@@ -2,13 +2,21 @@
   "name": "@cowork/research",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./planner": "./dist/planner/index.js",
+    "./executor": "./dist/executor/index.js",
+    "./reporter": "./dist/reporter/index.js",
+    "./tools": "./dist/tools/index.js"
+  },
   "dependencies": {
     "@cowork/core": "workspace:*",
     "@cowork/wiki": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "bun-types": "latest"
+    "@types/bun": "latest"
   }
 }

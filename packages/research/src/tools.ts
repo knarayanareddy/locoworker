@@ -1,25 +1,40 @@
-import type { ToolDefinition } from "@cowork/core";
-import { PermissionLevel } from "@cowork/core";
-import { AutoResearch } from "./AutoResearch";
+import { PermissionLevel, type ToolDefinition, type ToolContext } from "@cowork/core";
+import { AutoResearch } from "./AutoResearch.js";
 
 export const ResearchEnqueue: ToolDefinition = {
   name: "ResearchEnqueue",
-  description: "Queue a background research task. Results will be saved to memory and wiki.",
+  description:
+    "Add a research question to the AutoResearch queue. " +
+    "KAIROS will process it in the background and store the answer in memory + wiki.",
   inputSchema: {
     type: "object",
-    properties: { question: { type: "string" } },
+    properties: {
+      question: { type: "string", description: "The research question to investigate" },
+      priority: {
+        type: "number",
+        description: "Priority 1–10 (10 = highest). Default 5.",
+      },
+      tags: { type: "array", items: { type: "string" } },
+    },
     required: ["question"],
   },
-  permissionLevel: PermissionLevel.READ_ONLY,
-  async execute(input: { question: string }, ctx) {
+  permissionLevel: PermissionLevel.STANDARD,
+  async execute(
+    input: { question: string; priority?: number; tags?: string[] },
+    ctx: ToolContext
+  ) {
     const research = new AutoResearch({
       projectRoot: ctx.workingDirectory,
-      provider: (ctx as any).provider?.name ?? "anthropic", // bit of a hack, might need better config flow
-      model: (ctx as any).provider?.model ?? "claude-3-5-sonnet-20240620",
+      provider: ctx.settings?.provider ?? "ollama",
+      model: ctx.settings?.model ?? "qwen2.5-coder:7b",
     });
-    const id = await research.enqueue(input.question);
+    const id = await research.enqueue(
+      input.question,
+      input.priority ?? 5,
+      input.tags
+    );
     return {
-      content: `Research task queued: ${id}\nKAIROS will process this in the background.`,
+      content: `Research job "${id}" queued (priority: ${input.priority ?? 5})`,
       isError: false,
     };
   },
@@ -27,29 +42,41 @@ export const ResearchEnqueue: ToolDefinition = {
 
 export const ResearchNow: ToolDefinition = {
   name: "ResearchNow",
-  description: "Perform research immediately (blocking).",
+  description:
+    "Immediately conduct a research pass on a question (synchronous, may take ~30s). " +
+    "Stores the result in memory and wiki.",
   inputSchema: {
     type: "object",
-    properties: { question: { type: "string" } },
+    properties: {
+      question: { type: "string" },
+      tags: { type: "array", items: { type: "string" } },
+    },
     required: ["question"],
   },
   permissionLevel: PermissionLevel.STANDARD,
-  async execute(input: { question: string }, ctx) {
+  async execute(input: { question: string; tags?: string[] }, ctx: ToolContext) {
     const research = new AutoResearch({
       projectRoot: ctx.workingDirectory,
-      // @ts-ignore - reaching into context to get provider/model
-      provider: ctx.provider?.name ?? "anthropic",
-      // @ts-ignore
-      model: ctx.provider?.model ?? "claude-3-5-sonnet-20240620",
+      provider: ctx.settings?.provider ?? "ollama",
+      model: ctx.settings?.model ?? "qwen2.5-coder:7b",
+      outputToWiki: true,
+      outputToMemory: true,
     });
     const id = `now-${Date.now()}`;
-    const job = await research.runJob(id, input.question);
-    if (job.status === "failed") return { content: `Research failed: ${job.error}`, isError: true };
+    const job = await research.runJob(id, input.question, input.tags);
+    if (job.status === "failed") {
+      return { content: `Research failed: ${job.error}`, isError: true };
+    }
     return {
-      content: `## Research Result\n\n${job.answer}`,
+      content: `## Research Result\n\n**Q:** ${job.question}\n\n${job.answer}`,
       isError: false,
     };
   },
 };
 
-export const RESEARCH_TOOLS = [ResearchEnqueue, ResearchNow];
+export const RESEARCH_TOOLS: ToolDefinition[] = [ResearchEnqueue, ResearchNow];
+
+/** Alias for compatibility with session.ts if it expects a factory */
+export function makeResearchTools(..._args: any[]): ToolDefinition[] {
+  return RESEARCH_TOOLS;
+}

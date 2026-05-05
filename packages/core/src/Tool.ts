@@ -1,3 +1,4 @@
+import type { ResolvedSettings } from "./state/Settings.js";
 import { PermissionLevel } from "./permissions/PermissionLevel.js";
 
 /**
@@ -22,7 +23,13 @@ export type ExecutionContext = {
   /** Hook to ask user for approval; returns true if approved. */
   requestApproval?: (toolName: string, input: Record<string, unknown>) => Promise<boolean>;
   abortSignal?: AbortSignal;
+  /** Phase 5: Pass settings and sessionId into tools */
+  settings?: ResolvedSettings;
+  sessionId?: string;
+  tools?: ToolDefinition[];
 };
+
+export type ToolContext = ExecutionContext;
 
 export interface ToolDefinition<TInput = Record<string, unknown>> {
   name: string;

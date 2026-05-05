@@ -24,5 +24,7 @@ export interface SlashCommandContext {
 export interface SlashCommand {
   name: string;
   description: string;
-  execute(args: string, ctx: SlashCommandContext): Promise<void>;
+  summary?: string;
+  usage?: string;
+  execute(args: string[], ctx: SlashCommandContext): Promise<void>;
 }

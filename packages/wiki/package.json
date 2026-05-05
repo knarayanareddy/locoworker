@@ -2,12 +2,19 @@
   "name": "@cowork/wiki",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./store": "./dist/store/index.js",
+    "./compiler": "./dist/compiler/index.js",
+    "./tools": "./dist/tools/index.js"
+  },
   "dependencies": {
     "@cowork/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "bun-types": "latest"
+    "@types/bun": "latest"
   }
 }

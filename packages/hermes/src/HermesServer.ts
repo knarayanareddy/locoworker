@@ -9,10 +9,8 @@
  */
 
 import type { HermesConfig, MCPRequest, MCPResponse, MCPToolSchema } from "./types";
-import type { ToolDefinition, ToolContext } from "@cowork/core";
-import { DEFAULT_TOOLS, resolveSettings } from "@cowork/core";
-import { EXTENDED_TOOLS } from "@cowork/core";
-import { WIKI_TOOLS } from "@cowork/wiki";
+import { DEFAULT_TOOLS, resolveSettings, PermissionLevel, type ToolDefinition, type ToolContext } from "@cowork/core";
+import { WikiStore, WikiCompiler, makeWikiTools } from "@cowork/wiki";
 
 export class HermesServer {
   private config: HermesConfig;
@@ -20,9 +18,17 @@ export class HermesServer {
   private httpServer?: ReturnType<typeof Bun.serve>;
 
   constructor(config: HermesConfig) {
-    this.config = { port: 3722, transport: "stdio", verbose: false, ...config };
+    this.config = { ...config };
+    if (this.config.port === undefined) this.config.port = 3722;
+    if (this.config.transport === undefined) this.config.transport = "stdio";
+    if (this.config.verbose === undefined) this.config.verbose = false;
+    
     // Build the tool list to expose
-    const allTools = [...DEFAULT_TOOLS, ...EXTENDED_TOOLS, ...WIKI_TOOLS];
+    const wikiStore = new WikiStore(this.config.projectRoot);
+    const wikiCompiler = new WikiCompiler(wikiStore, async () => "(wiki compile not supported via mcp)");
+    const wikiTools = makeWikiTools(wikiStore, wikiCompiler);
+    
+    const allTools = [...DEFAULT_TOOLS, ...wikiTools];
     this.tools = config.tools
       ? allTools.filter((t) => config.tools!.includes(t.name))
       : allTools;
@@ -82,7 +88,7 @@ export class HermesServer {
       `[Hermes] MCP SSE server running on http://localhost:${this.config.port}`
     );
     // Keep alive
-    await new Promise<never>(() => {});
+    await new Promise<void>(() => {});
   }
 
   private async handleHttpRequest(req: Request): Promise<Response> {
@@ -157,6 +163,7 @@ export class HermesServer {
       workingDirectory: this.config.projectRoot,
       settings,
       tools: this.tools,
+      permissionLevel: PermissionLevel.ELEVATED, // Hermes typically has full access
     };
 
     try {

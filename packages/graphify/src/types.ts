@@ -32,7 +32,7 @@ export type GraphNode = {
   id: string;
   kind: NodeKind;
   name: string;
-  /** Project-relative path. Optional for synthesized concept nodes. */
+  /** Project-relative path. */
   path?: string;
   /** 1-indexed line if applicable. */
   line?: number;
@@ -43,6 +43,8 @@ export type GraphNode = {
   community?: number;
   /** PageRank-style centrality score, [0,1]. */
   centrality?: number;
+  confidence?: number;
+  provenance?: RelationProvenance;
 };
 
 export type GraphEdge = {
@@ -53,14 +55,15 @@ export type GraphEdge = {
   weight: number;
   /** Optional metadata — e.g. "import path", "call site". */
   detail?: string;
+  confidence?: number;
 };
 
 export type GraphMetadata = {
   builtAt: string;
   rootDir: string;
-  files: number;
-  nodes: number;
-  edges: number;
+  fileCount: number;
+  nodeCount: number;
+  edgeCount: number;
   languages: string[];
   /** "before" file-byte total used for the token-reduction summary. */
   totalSourceBytes: number;

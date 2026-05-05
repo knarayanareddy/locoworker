@@ -6,7 +6,7 @@ import { parseArgs, HELP } from "./args.js";
 import { buildSessionRuntime } from "./session.js";
 import { runRepl } from "./repl.js";
 import { renderEvent } from "./render.js";
-import { resolveSettings, queryLoop } from "@cowork/core";
+import { resolveSettings, queryLoop, defaultRegistry } from "@cowork/core";
 import { readFile } from "node:fs/promises";
 import type { McpServerConfig } from "@cowork/core/mcp";
 
@@ -30,15 +30,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const settings = await resolveSettings(process.cwd(), process.env as Record<string, string>, {
-    provider:       parsed.provider as any,
-    model:          parsed.model,
-    permissionMode: parsed.permission as any,
-    maxTurns:       parsed.maxTurns,
-    mcpServers,
-    enableGraphify: parsed.enableGraphify,
-    embedderApiKey: process.env["COWORK_EMBEDDER_API_KEY"],
-  });
+  const overrides: Partial<import("@cowork/core").Settings> = { mcpServers };
+  if (parsed.provider) overrides.provider = parsed.provider as any;
+  if (parsed.model) overrides.model = parsed.model;
+  if (parsed.permission) overrides.permissionMode = parsed.permission as any;
+  if (parsed.maxTurns) overrides.maxTurns = parsed.maxTurns;
+  if (parsed.enableGraphify) overrides.enableGraphify = parsed.enableGraphify;
+  if (process.env["COWORK_EMBEDDER_API_KEY"]) overrides.embedderApiKey = process.env["COWORK_EMBEDDER_API_KEY"];
+
+  const settings = await resolveSettings(process.cwd(), process.env as Record<string, string>, overrides);
 
   // ── Build runtime ──────────────────────────────────────────────────────────
   const runtime = await buildSessionRuntime(settings);
@@ -56,13 +56,40 @@ async function main(): Promise<void> {
 
   // One-shot mode
   const prompt = parsed.prompt;
-  await runtime.memory.appendTranscript(runtime.sessionId, "user", prompt);
+
+  // ── Slash Command Dispatch ─────────────────────────────────────────────────
+  if (prompt.startsWith("/")) {
+    let triggeredPrompt = "";
+    const registry = defaultRegistry();
+    const ctx = {
+      memory: runtime.memory,
+      engine: runtime.engine,
+      compressor: runtime.compressor,
+      sessionId: runtime.sessionId,
+      workingDirectory: settings.workingDirectory,
+      runTurn: async (p: string) => { triggeredPrompt = p; },
+      skills: runtime.skills,
+      sessionManager: runtime.sessionManager,
+      print: (msg: string) => process.stdout.write(msg + "\n"),
+    };
+    const handled = await registry.dispatch(prompt, ctx);
+    if (handled) {
+      if (!triggeredPrompt) return;
+      // Continue execution with the generated prompt
+      parsed.prompt = triggeredPrompt;
+    }
+  }
+
+  const finalPrompt = parsed.prompt;
+  await runtime.memory.appendTranscript(runtime.sessionId, [
+    { role: "user", content: finalPrompt },
+  ]);
 
   let assistantBuffer = "";
   let inputTokens = 0;
   let outputTokens = 0;
 
-  for await (const event of queryLoop(prompt, {
+  for await (const event of queryLoop(finalPrompt, {
     engine:           runtime.engine,
     systemPrompt:     runtime.systemPrompt,
     tools:            runtime.tools,
@@ -72,8 +99,11 @@ async function main(): Promise<void> {
     requestApproval:  parsed.yes ? async () => true : undefined,
     compressor:       runtime.compressor,
     hooks:            runtime.hooks,
+    sessionId:        runtime.sessionId,
+    workingDirectory: settings.workingDirectory,
+    settings:         settings,
   })) {
-    renderEvent(event, parsed.json);
+    renderEvent(event, { json: !!parsed.json });
 
     if (event.type === "text")     assistantBuffer += event.text;
     if (event.type === "complete") {
@@ -83,11 +113,13 @@ async function main(): Promise<void> {
   }
 
   if (assistantBuffer) {
-    await runtime.memory.appendTranscript(runtime.sessionId, "assistant", assistantBuffer);
+    await runtime.memory.appendTranscript(runtime.sessionId, [
+      { role: "assistant", content: assistantBuffer },
+    ]);
   }
 
   await runtime.sessionManager.update(runtime.sessionId, {
-    status:            "completed",
+    status:            "complete",
     summary:           assistantBuffer.slice(0, 500),
     turns:             1,
     totalInputTokens:  inputTokens,

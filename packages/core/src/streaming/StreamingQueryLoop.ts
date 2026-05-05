@@ -4,9 +4,10 @@
  * Drop-in replacement for queryLoop when the provider supports streaming.
  */
 
-import type { StreamingProvider, StreamChunk } from "./types";
+import type { StreamingProvider } from "./types";
 import type { ToolDefinition, ToolContext, AgentEvent } from "../index";
-import { PermissionGate } from "../permissions/PermissionGate";
+import { PermissionGate } from "../permissions/PermissionGate.js";
+import { PermissionLevel } from "../permissions/PermissionLevel.js";
 
 export type StreamingAgentEvent =
   | AgentEvent
@@ -20,7 +21,7 @@ export interface StreamingLoopConfig {
   tools: ToolDefinition[];
   maxTurns?: number;
   maxTokens?: number;
-  permissionLevel?: string;
+  permissionLevel?: PermissionLevel;
   workingDirectory: string;
   approvalHandler?: (toolName: string, input: unknown) => Promise<boolean>;
   onToolCall?: (toolName: string) => void;
@@ -32,14 +33,14 @@ export async function* streamingQueryLoop(
 ): AsyncGenerator<StreamingAgentEvent> {
   const { provider, systemPrompt, tools, maxTurns = 50, maxTokens = 4096, workingDirectory } = config;
   const toolMap = new Map(tools.map((t) => [t.name, t]));
-  const history: Array<{ role: string; content: unknown }> = [
+  const history: Array<{ role: string; content: any }> = [
     { role: "user", content: prompt },
   ];
 
-  const gate = new PermissionGate(config.permissionLevel ?? "STANDARD");
+  const sessionLevel = config.permissionLevel ?? PermissionLevel.STANDARD;
 
   for (let turn = 0; turn < maxTurns; turn++) {
-    yield { type: "turn_start" } as AgentEvent;
+    yield { type: "turn_start", turn };
     yield { type: "stream_start" };
 
     // ── Accumulate streamed content into blocks ────────────────────────────
@@ -74,10 +75,10 @@ export async function* streamingQueryLoop(
           }) - 1;
           yield {
             type: "tool_call",
-            toolName: chunk.toolName ?? "",
-            toolId: chunk.toolId ?? "",
-            toolInput: {},
-          } as AgentEvent;
+            id: chunk.toolId ?? "",
+            name: chunk.toolName ?? "",
+            input: {},
+          };
           break;
 
         case "tool_use_delta":
@@ -98,8 +99,8 @@ export async function* streamingQueryLoop(
         case "error":
           yield {
             type: "error",
-            error: chunk.error ?? "Unknown stream error",
-          } as AgentEvent;
+            message: chunk.error ?? "Unknown stream error",
+          };
           return;
       }
     }
@@ -107,10 +108,10 @@ export async function* streamingQueryLoop(
     yield { type: "stream_end" };
 
     // ── Build assistant message for history ───────────────────────────────
-    const assistantContent: unknown[] = [];
+    const assistantContent: any[] = [];
     if (fullText) assistantContent.push({ type: "text", text: fullText });
     for (const tb of toolUseBlocks) {
-      let input: unknown = {};
+      let input: any = {};
       try { input = JSON.parse(tb.inputJson || "{}"); } catch { /* keep {} */ }
       assistantContent.push({ type: "tool_use", id: tb.id, name: tb.name, input });
     }
@@ -118,12 +119,12 @@ export async function* streamingQueryLoop(
 
     // ── If no tool calls, we're done ──────────────────────────────────────
     if (toolUseBlocks.length === 0 || stopReason !== "tool_use") {
-      yield { type: "complete", usage } as AgentEvent;
+      yield { type: "complete", text: fullText, usage };
       return;
     }
 
     // ── Execute tool calls ─────────────────────────────────────────────────
-    const toolResultContent: unknown[] = [];
+    const toolResultContent: any[] = [];
 
     for (const tb of toolUseBlocks) {
       config.onToolCall?.(tb.name);
@@ -139,17 +140,24 @@ export async function* streamingQueryLoop(
         continue;
       }
 
-      let input: Record<string, unknown> = {};
+      let input: Record<string, any> = {};
       try { input = JSON.parse(tb.inputJson || "{}"); } catch { /* empty */ }
 
+      const ctx: ToolContext = {
+        workingDirectory,
+        settings: {} as any,
+        tools,
+        permissionLevel: sessionLevel,
+      };
+
       // Permission check
-      const perm = gate.check(tool);
-      if (!perm.allowed) {
+      const perm = PermissionGate.check(tool, ctx);
+      if (perm.allowed === false) {
         yield {
-          type: "tool_denied",
-          toolName: tb.name,
+          type: "permission_denied",
+          tool: tb.name,
           reason: perm.reason,
-        } as AgentEvent;
+        };
         toolResultContent.push({
           type: "tool_result",
           tool_use_id: tb.id,
@@ -160,7 +168,12 @@ export async function* streamingQueryLoop(
       }
 
       // Approval
-      if (perm.requiresApproval && config.approvalHandler) {
+      if (perm.allowed === "needs_approval" && config.approvalHandler) {
+        yield {
+          type: "permission_request",
+          tool: tb.name,
+          input,
+        };
         const approved = await config.approvalHandler(tb.name, input);
         if (!approved) {
           toolResultContent.push({
@@ -173,15 +186,15 @@ export async function* streamingQueryLoop(
         }
       }
 
-      const ctx: ToolContext = {
-        workingDirectory,
-        settings: {} as any,
-        tools,
-      };
-
       try {
         const result = await tool.execute(input, ctx);
-        yield { type: "tool_result", toolName: tb.name, content: result.content } as AgentEvent;
+        yield {
+          type: "tool_result",
+          id: tb.id,
+          name: tb.name,
+          result: result.content,
+          isError: result.isError,
+        };
         toolResultContent.push({
           type: "tool_result",
           tool_use_id: tb.id,
@@ -202,5 +215,5 @@ export async function* streamingQueryLoop(
     history.push({ role: "user", content: toolResultContent });
   }
 
-  yield { type: "complete", usage: { inputTokens: 0, outputTokens: 0 } } as AgentEvent;
+  yield { type: "complete", text: "", usage: { inputTokens: 0, outputTokens: 0 } };
 }

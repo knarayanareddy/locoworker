@@ -2,6 +2,7 @@ import type { Message } from "../../types.js";
 import type { QueryEngine } from "../../QueryEngine.js";
 import { microCompact } from "./MicroCompact.js";
 import { AutoCompactor, DEFAULT_AUTO_COMPACT_OPTIONS } from "./AutoCompact.js";
+import { fullCompact, type FullCompactResult } from "./FullCompact.js";
 
 export type CompressionConfig = {
   /** Soft target context window for the active model, in tokens. */
@@ -45,6 +46,10 @@ export class ContextCompressor {
 
   async autoCompact(messages: Message[]): Promise<Message[] | null> {
     return this.auto.compact(messages);
+  }
+
+  async full(messages: Message[], systemPrompt: string): Promise<FullCompactResult> {
+    return fullCompact(messages, this.auto.engine, systemPrompt);
   }
 }
 

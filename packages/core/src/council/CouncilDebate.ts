@@ -4,9 +4,9 @@
  * then a moderator synthesizes a verdict.
  */
 
-import { QueryEngine } from "../QueryEngine";
-import { resolveProvider } from "../providers";
-import type { ResolvedSettings } from "../settings/types";
+import { QueryEngine } from "../QueryEngine.js";
+import { resolveProvider } from "../providers/index.js";
+import type { ResolvedSettings } from "../state/Settings.js";
 
 export type CouncilStance = "for" | "against" | "neutral" | "devil" | "expert" | "pragmatist";
 
@@ -60,6 +60,7 @@ export class CouncilDebate {
     const providerCfg = resolveProvider({
       provider: config.settings.provider,
       model: config.settings.model,
+      env: process.env,
     });
     this.engine = new QueryEngine(providerCfg);
   }

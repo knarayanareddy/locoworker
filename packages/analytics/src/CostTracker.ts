@@ -1,6 +1,6 @@
 import { estimateCost } from "./pricing";
 import { MemorySystem } from "@cowork/core";
-import path from "path";
+import path from "node:path";
 import { mkdir } from "node:fs/promises";
 
 export interface UsageRecord {
@@ -102,49 +102,21 @@ export class CostTracker {
     };
   }
 
-  async monthlySummary(yearMonth?: string): Promise<{
-    month: string;
-    totalCostUsd: number;
-    totalTokens: number;
-    dailyBreakdown: DailySummary[];
-  }> {
-    const ym = yearMonth ?? new Date().toISOString().slice(0, 7);
-    const dir = this.usageDir();
-    const glob = new (await import("bun")).Glob(`${ym}-*.jsonl`);
-    const summaries: DailySummary[] = [];
-
-    try {
-      for await (const file of glob.scan({ cwd: dir, onlyFiles: true })) {
-        const d = file.replace(".jsonl", "");
-        const s = await this.dailySummary(d);
-        if (s) summaries.push(s);
-      }
-    } catch { /* no data */ }
-
-    return {
-      month: ym,
-      totalCostUsd: summaries.reduce((s, d) => s + d.totalCostUsd, 0),
-      totalTokens: summaries.reduce(
-        (s, d) => s + d.totalInputTokens + d.totalOutputTokens,
-        0
-      ),
-      dailyBreakdown: summaries.sort((a, b) => a.date.localeCompare(b.date)),
-    };
-  }
-
   private async append(record: UsageRecord): Promise<void> {
-    const dir = this.usageDir();
-    await mkdir(dir, { recursive: true });
-    const file = this.usageFile(record.ts.slice(0, 10));
-    const existing = await Bun.file(file).text().catch(() => "");
-    await Bun.write(file, existing + JSON.stringify(record) + "\n");
-  }
+    const date = record.ts.slice(0, 10);
+    const file = this.usageFile(date);
+    await mkdir(path.dirname(file), { recursive: true });
 
-  private usageDir(): string {
-    return path.join(MemorySystem.rootFor(this.projectRoot), "analytics");
+    const line = JSON.stringify(record) + "\n";
+    const existing = await Bun.file(file).text().catch(() => "");
+    await Bun.write(file, existing + line);
   }
 
   private usageFile(date: string): string {
-    return path.join(this.usageDir(), `${date}.jsonl`);
+    return path.join(
+      MemorySystem.rootFor(this.projectRoot),
+      "analytics",
+      `usage-${date}.jsonl`
+    );
   }
 }

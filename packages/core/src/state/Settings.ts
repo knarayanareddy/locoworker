@@ -26,9 +26,13 @@ export type Settings = {
   /** When false, transcripts are not persisted to disk. */
   persistTranscripts: boolean;
   /** Phase 5: MCP server configurations */
-  mcpServers?: import("../mcp/McpServerConfig.js").McpServerConfig[];
+  mcpServers?: import("../mcp/index.js").McpServerConfig[];
   /** Phase 5: Enable Graphify knowledge-graph tools */
   enableGraphify?: boolean;
+  /** Phase 6: Enable LLMWiki tools */
+  enableWiki?: boolean;
+  /** Phase 8: Security Sandboxing for Bash commands */
+  sandboxMode?: "none" | "docker" | "podman";
 };
 
 export type ResolvedSettings = Settings & {
@@ -45,6 +49,8 @@ const DEFAULTS: Settings = {
   loadProjectContext: true,
   persistTranscripts: true,
   enableGraphify: false,
+  enableWiki: true,
+  sandboxMode: "none",
 };
 
 /**
@@ -55,12 +61,17 @@ const DEFAULTS: Settings = {
  *   4. Environment variables
  *   5. CLI flags (passed in via `overrides`)
  */
+export function getCoworkHome(): string {
+  if (process.env.COWORK_HOME) return process.env.COWORK_HOME;
+  return join(homedir(), ".cowork");
+}
+
 export async function resolveSettings(
   cwd: string,
   env: NodeJS.ProcessEnv,
   overrides: Partial<Settings> = {},
 ): Promise<ResolvedSettings> {
-  const userSettings = await tryLoadJson(join(homedir(), ".cowork", "settings.json"));
+  const userSettings = await tryLoadJson(join(getCoworkHome(), "settings.json"));
   const projectSettings = await tryLoadJson(join(cwd, ".cowork", "settings.json"));
 
   const fromEnv: Partial<Settings> = {};
@@ -86,6 +97,12 @@ export async function resolveSettings(
   if (env.COWORK_EMBEDDER_API_KEY) fromEnv.embedderApiKey = env.COWORK_EMBEDDER_API_KEY;
   if (env.COWORK_ENABLE_GRAPHIFY) {
     fromEnv.enableGraphify = env.COWORK_ENABLE_GRAPHIFY === "true";
+  }
+  if (env.COWORK_WIKI_ENABLED) {
+    fromEnv.enableWiki = env.COWORK_WIKI_ENABLED === "true";
+  }
+  if (env.COWORK_SANDBOX_MODE) {
+    fromEnv.sandboxMode = env.COWORK_SANDBOX_MODE as "none" | "docker" | "podman";
   }
 
   const merged: Settings = {

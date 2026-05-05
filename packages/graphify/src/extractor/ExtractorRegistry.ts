@@ -1,4 +1,4 @@
-import type { Extractor } from "./types";
+import type { Extractor } from "./Extractor.js";
 import { TypeScriptExtractor } from "./TypeScriptExtractor";
 import { PythonExtractor } from "./PythonExtractor";
 import { MarkdownExtractor } from "./MarkdownExtractor";
@@ -31,3 +31,5 @@ export class ExtractorRegistry {
     return [...this.extractors.keys()];
   }
 }
+
+export const defaultExtractorRegistry = new ExtractorRegistry();

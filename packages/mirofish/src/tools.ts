@@ -1,61 +1,90 @@
-import type { ToolDefinition, ToolContext } from "@cowork/core";
-import { MiroFishStudio } from "./MiroFishStudio";
-import type { PlatformType } from "./types";
+import { PermissionLevel, type ToolDefinition, type ToolContext } from "@cowork/core";
+import { MiroFishStudio } from "./MiroFishStudio.js";
 
 export const SimulationRun: ToolDefinition = {
   name: "SimulationRun",
   description: [
-    "Run a MiroFish swarm intelligence simulation to predict social/market reactions.",
-    "Spawns diverse AI agents with distinct personalities, lets them interact across rounds,",
-    "and produces a report with sentiment distribution and predicted outcomes.",
+    "Run a MiroFish multi-agent swarm simulation. Provide a seed document (news, report, announcement)",
+    "and a scenario question (what reaction to predict). The simulation spawns AI agents with unique",
+    "personalities, runs them through interaction rounds, and generates a prediction report.",
+    "Returns the prediction summary. Full report saved to mirofish-out/ and wiki.",
   ].join(" "),
   inputSchema: {
     type: "object",
     properties: {
-      scenario: {
+      seedDocument: {
         type: "string",
-        description: "The scenario or event to simulate reaction to",
+        description: "The event/scenario seed (news article, product announcement, etc.)",
       },
-      question: {
+      scenarioPrompt: {
         type: "string",
-        description: "What specific outcome are we trying to predict?",
+        description: "What to predict (e.g. 'How will users react to this price increase?')",
       },
       platform: {
         type: "string",
         enum: ["twitter", "reddit", "slack", "neutral"],
-        default: "neutral",
+        description: "Simulated platform (default: neutral)",
       },
-      agentCount: { type: "number", description: "Number of agents (default 15, max 100)" },
-      rounds: { type: "number", description: "Simulation rounds (default 6, max 40)" },
+      agentCount: {
+        type: "number",
+        description: "Number of agents (5–100, default 20)",
+      },
+      rounds: {
+        type: "number",
+        description: "Simulation rounds (1–40, default 10)",
+      },
     },
-    required: ["scenario", "question"],
+    required: ["seedDocument", "scenarioPrompt"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.ELEVATED,
   async execute(
     input: {
-      scenario: string;
-      question: string;
-      platform?: PlatformType;
+      seedDocument: string;
+      scenarioPrompt: string;
+      platform?: string;
       agentCount?: number;
       rounds?: number;
     },
     ctx: ToolContext
   ) {
     const studio = new MiroFishStudio({ projectRoot: ctx.workingDirectory });
+    const progressLines: string[] = [];
+
     try {
-      const report = await studio.run({
-        seedDocument: input.scenario,
-        scenarioPrompt: input.question,
-        platform: input.platform ?? "neutral",
-        agentCount: input.agentCount ?? 15,
-        rounds: input.rounds ?? 6,
-        modelProvider: ctx.settings!.provider,
-        model: ctx.settings!.model,
-        concurrency: 3,
-      });
+      const report = await studio.run(
+        {
+          seedDocument: input.seedDocument,
+          scenarioPrompt: input.scenarioPrompt,
+          platform: (input.platform ?? "neutral") as any,
+          agentCount: Math.min(input.agentCount ?? 20, 100),
+          rounds: Math.min(input.rounds ?? 10, 40),
+          modelProvider: ctx.settings?.provider ?? "ollama",
+          model: ctx.settings?.model ?? "qwen2.5-coder:7b",
+          concurrency: 4,
+        },
+        (round, count) => {
+          progressLines.push(`Round ${round}: ${count} actions`);
+        }
+      );
 
       return {
-        content: report.rawMarkdown,
+        content: [
+          `## MiroFish Simulation Complete`,
+          `**Agents:** ${report.agentCount} | **Rounds:** ${report.rounds} | **Actions:** ${report.totalActions}`,
+          "",
+          `### Prediction`,
+          report.prediction,
+          "",
+          `### Dominant Narrative`,
+          report.dominantNarrative,
+          "",
+          `### Belief Distribution`,
+          `For: ${report.finalBeliefDistribution.stronglyFor + report.finalBeliefDistribution.mildlyFor} agents`,
+          `Against: ${report.finalBeliefDistribution.mildlyAgainst + report.finalBeliefDistribution.stronglyAgainst} agents`,
+          `Neutral: ${report.finalBeliefDistribution.neutral} agents`,
+          "",
+          `Full report: mirofish-out/${report.id}-report.md`,
+        ].join("\n"),
         isError: false,
       };
     } catch (err) {
@@ -68,3 +97,7 @@ export const SimulationRun: ToolDefinition = {
 };
 
 export const MIROFISH_TOOLS: ToolDefinition[] = [SimulationRun];
+
+export function makeSimulationTools(..._args: any[]): ToolDefinition[] {
+  return MIROFISH_TOOLS;
+}

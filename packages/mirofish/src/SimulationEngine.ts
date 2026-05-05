@@ -24,13 +24,16 @@ export class SimulationEngine {
 
   constructor(config: SimulationConfig) {
     this.config = {
-      agentCount: 20,
-      rounds: 10,
-      concurrency: 4,
-      platform: "neutral",
       ...config,
     };
 
+    // Set defaults if not provided
+    if (this.config.agentCount === undefined) this.config.agentCount = 20;
+    if (this.config.rounds === undefined) this.config.rounds = 10;
+    if (this.config.concurrency === undefined) this.config.concurrency = 4;
+    if (this.config.platform === undefined) this.config.platform = "neutral";
+
+    // Clamp to safety limits
     this.config.agentCount = Math.min(this.config.agentCount, 100);
     this.config.rounds = Math.min(this.config.rounds, 40);
     this.config.concurrency = Math.min(this.config.concurrency, 8);
@@ -38,6 +41,7 @@ export class SimulationEngine {
     const providerCfg = resolveProvider({
       provider: config.modelProvider as any,
       model: config.model,
+      env: process.env as any,
     });
     this.engine = new QueryEngine(providerCfg);
     this.factory = new AgentFactory(config);
@@ -52,6 +56,8 @@ export class SimulationEngine {
     };
   }
 
+  // ── Main simulation entry point ────────────────────────────────────────────
+
   async run(
     onRoundComplete?: (round: number, actions: SimAction[]) => void
   ): Promise<SimulationState> {
@@ -59,16 +65,24 @@ export class SimulationEngine {
     this.state.startedAt = new Date().toISOString();
 
     try {
+      // Phase 1: Spawn agents
+      if (this.config.verbose) console.error(`[MiroFish] Generating ${this.config.agentCount} agents…`);
       this.state.agents = await this.factory.generateAgents(
         this.config.seedDocument,
         this.config.agentCount
       );
 
+      // Phase 2: Simulate rounds
       for (let round = 1; round <= this.config.rounds; round++) {
         this.state.round = round;
+        if (this.config.verbose) console.error(`[MiroFish] Round ${round}/${this.config.rounds}`);
+
         const roundActions = await this.simulateRound(round);
         this.state.actions.push(...roundActions);
+
+        // Update agent beliefs based on their network actions this round
         this.propagateBeliefs(roundActions);
+
         if (onRoundComplete) onRoundComplete(round, roundActions);
       }
 
@@ -82,10 +96,13 @@ export class SimulationEngine {
     return this.state;
   }
 
+  // ── Simulate one round for all agents ────────────────────────────────────
+
   private async simulateRound(round: number): Promise<SimAction[]> {
     const actions: SimAction[] = [];
     const agents = this.state.agents.filter((a) => a.personality !== "lurker" || Math.random() > 0.7);
 
+    // Batch into concurrency-limited chunks
     for (let i = 0; i < agents.length; i += this.config.concurrency) {
       const batch = agents.slice(i, i + this.config.concurrency);
       const batchActions = await Promise.all(
@@ -99,15 +116,19 @@ export class SimulationEngine {
     return actions;
   }
 
+  // ── Single agent turn ──────────────────────────────────────────────────────
+
   private async agentTurn(agent: SimAgent, round: number): Promise<SimAction | null> {
     const availableActions = ACTIONS_BY_PLATFORM[this.config.platform] ?? ACTIONS_BY_PLATFORM.neutral;
 
+    // Pick a potential target (someone the agent follows or a random agent)
     const targets = [
       ...agent.following.map((id) => this.state.agents.find((a) => a.id === id)),
       ...this.state.agents.filter(() => Math.random() > 0.7),
     ].filter(Boolean) as SimAgent[];
     const target = targets[Math.floor(Math.random() * targets.length)];
 
+    // Recent context: last 3 actions by followed agents
     const recentContext = this.state.actions
       .filter(
         (a) =>
@@ -165,6 +186,7 @@ export class SimulationEngine {
         beliefDelta: Math.min(0.2, Math.max(-0.2, parsed.beliefDelta ?? 0)),
       };
 
+      // Update agent memory
       agent.memory = [...agent.memory.slice(-4), action.content];
       return action;
     } catch {
@@ -172,13 +194,17 @@ export class SimulationEngine {
     }
   }
 
+  // ── Belief propagation ─────────────────────────────────────────────────────
+
   private propagateBeliefs(actions: SimAction[]): void {
     for (const action of actions) {
       const agent = this.state.agents.find((a) => a.id === action.agentId);
       if (!agent) continue;
 
+      // Direct belief update
       agent.beliefScore = Math.min(1, Math.max(0, agent.beliefScore + action.beliefDelta));
 
+      // Influence propagation: followers absorb 30% of influencer's delta
       if (agent.influenceScore > 0.6) {
         for (const followerId of agent.followedBy) {
           const follower = this.state.agents.find((a) => a.id === followerId);

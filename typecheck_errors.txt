@@ -1,0 +1,42 @@
+
+> locoworker@0.1.0 typecheck
+> tsc --build
+
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(7,42): error TS2307: Cannot find module '../extractor/registry.js' or its corresponding type declarations.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(8,40): error TS2307: Cannot find module '../extractor/registry.js' or its corresponding type declarations.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(103,7): error TS2353: Object literal may only specify known properties, and 'fileCount' does not exist in type 'GraphMetadata'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(105,24): error TS2339: Property 'nodeCount' does not exist on type 'Graph'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(106,24): error TS2339: Property 'edgeCount' does not exist on type 'Graph'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(114,24): error TS2339: Property 'nodeCount' does not exist on type 'Graph'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(115,24): error TS2339: Property 'edgeCount' does not exist on type 'Graph'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(125,7): error TS2322: Type 'Dirent<string>[]' is not assignable to type 'Dirent<NonSharedBuffer>[]'.
+  Type 'Dirent<string>' is not assignable to type 'Dirent<NonSharedBuffer>'.
+    Type 'string' is not assignable to type 'NonSharedBuffer'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(131,25): error TS2345: Argument of type 'NonSharedBuffer' is not assignable to parameter of type 'string'.
+packages/graphify/src/build/KnowledgeGraphBuilder.ts(132,34): error TS2345: Argument of type 'NonSharedBuffer' is not assignable to parameter of type 'string'.
+packages/core/src/commands/memory.ts(3,29): error TS2305: Module '"./SlashCommand.js"' has no exported member 'SlashOutput'.
+packages/core/src/commands/memory.ts(7,3): error TS2353: Object literal may only specify known properties, and 'summary' does not exist in type 'SlashCommand'.
+packages/core/src/commands/memory.ts(29,3): error TS2353: Object literal may only specify known properties, and 'summary' does not exist in type 'SlashCommand'.
+packages/core/src/commands/memory.ts(33,24): error TS2339: Property 'join' does not exist on type 'string'.
+packages/core/src/commands/memory.ts(39,18): error TS2339: Property 'entry' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(39,34): error TS2339: Property 'entry' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(39,56): error TS2339: Property 'score' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(39,79): error TS2339: Property 'via' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(39,104): error TS2339: Property 'entry' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(39,122): error TS2339: Property 'entry' does not exist on type 'MemoryEntry'.
+packages/core/src/commands/memory.ts(48,3): error TS2353: Object literal may only specify known properties, and 'summary' does not exist in type 'SlashCommand'.
+packages/core/src/commands/memory.ts(66,3): error TS2353: Object literal may only specify known properties, and 'summary' does not exist in type 'SlashCommand'.
+packages/core/src/commands/session.ts(47,48): error TS2339: Property 'delete' does not exist on type 'SessionManager'.
+packages/core/src/commands/skills.ts(30,24): error TS2339: Property 'tags' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(30,47): error TS2339: Property 'tags' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(44,17): error TS2339: Property 'tags' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(44,56): error TS2339: Property 'tags' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(45,17): error TS2339: Property 'preferredModel' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(45,59): error TS2339: Property 'preferredModel' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(46,39): error TS2339: Property 'template' does not exist on type 'Skill'.
+packages/core/src/commands/skills.ts(53,35): error TS2339: Property 'invoke' does not exist on type 'SkillRegistry'.
+packages/core/src/council/CouncilDebate.ts(9,39): error TS2307: Cannot find module '../settings/types' or its corresponding type declarations.
+packages/core/src/council/CouncilDebate.ts(60,41): error TS2345: Argument of type '{ provider: any; model: any; }' is not assignable to parameter of type 'ProviderResolutionInput'.
+  Property 'env' is missing in type '{ provider: any; model: any; }' but required in type 'ProviderResolutionInput'.
+packages/core/src/council/tools.ts(1,50): error TS2307: Cannot find module '../tools/types' or its corresponding type declarations.
+packages/core/src/mcp/buildMcpTools.ts(42,11): error TS2741: Property 'type' is missing in type 'Record<string, unknown>' but required in type 'JSONSchema'.

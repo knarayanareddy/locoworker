@@ -33,7 +33,7 @@ export const BashTool: ToolDefinition<BashInput> = {
 
   async execute(input: BashInput, ctx: ExecutionContext): Promise<ToolResult> {
     const security = checkBashCommand(input.command);
-    if (!security.safe) {
+    if (security.safe === false) {
       return err(`Blocked by security check: ${security.reason}`);
     }
 
@@ -41,9 +41,26 @@ export const BashTool: ToolDefinition<BashInput> = {
     const cwd = input.cwd ?? ctx.workingDirectory;
 
     return await new Promise<ToolResult>((resolve) => {
-      const child = spawn("/bin/bash", ["-c", input.command], {
-        cwd,
-        env: process.env,
+      const isDocker = ctx.settings?.sandboxMode === "docker";
+      const bin = isDocker ? "docker" : "/bin/bash";
+      const args = isDocker
+        ? [
+            "run",
+            "--rm",
+            "-v",
+            `${cwd}:/workspace`,
+            "-w",
+            "/workspace",
+            "ubuntu:latest",
+            "/bin/bash",
+            "-c",
+            input.command,
+          ]
+        : ["-c", input.command];
+
+      const child = spawn(bin, args, {
+        cwd: isDocker ? undefined : cwd,
+        env: isDocker ? undefined : process.env,
       });
 
       let stdout = "";

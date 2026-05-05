@@ -1,0 +1,12 @@
+{
+  "name": "@cowork/kairos-daemon",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "kairos": "./src/index.ts" },
+  "dependencies": {
+    "@cowork/core": "workspace:*",
+    "@cowork/kairos": "workspace:*",
+    "@cowork/telemetry": "workspace:*"
+  },
+  "devDependencies": { "typescript": "^5.4.0", "@types/bun": "latest" }
+}

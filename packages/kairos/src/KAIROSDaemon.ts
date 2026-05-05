@@ -10,10 +10,10 @@ export class KAIROSDaemon extends EventEmitter {
 
   constructor(config: KairosConfig) {
     super();
-    this.config = {
-      ...config,
-    };
-    if (!this.config.tickIntervalMs) this.config.tickIntervalMs = 30_000;
+    this.config = { ...config };
+    if (this.config.tickIntervalMs === undefined) {
+      this.config.tickIntervalMs = 30_000;
+    }
   }
 
   register(task: KairosTask): this {
@@ -102,7 +102,7 @@ export class KAIROSDaemon extends EventEmitter {
   private async runTask(task: KairosTask): Promise<KairosTaskStatus> {
     try {
       // Dynamic import of task executor to keep daemon lightweight
-      const { executeKairosTask } = await import("./executor.js");
+      const { executeKairosTask } = await import("./executor");
       await executeKairosTask(task, this.config);
 
       this.emit("event", {

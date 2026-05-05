@@ -1,8 +1,8 @@
-import type { TelemetryConfig, Span } from "./types";
+import type { TelemetryConfig } from "./types";
 import { Tracer } from "./Tracer";
 import { MetricsCollector } from "./MetricsCollector";
 import { MemorySystem } from "@cowork/core";
-import path from "path";
+import path from "node:path";
 import { mkdir } from "node:fs/promises";
 
 const TELEMETRY_DIR = "telemetry";
@@ -84,7 +84,9 @@ export class TelemetryService {
     const points = this.metrics.recentPoints(500);
     if (points.length === 0) return;
 
-    const lines = points.map((p) => JSON.stringify(p)).join("\n") + "\n";
+    const lines = points.map((p) => JSON.parse(JSON.stringify(p))).map((p) => JSON.stringify(p)).join("\n") + "\n";
+    
+    // Bun.write can append if we read first
     const existing = await Bun.file(file).text().catch(() => "");
     await Bun.write(file, existing + lines);
 
@@ -95,7 +97,7 @@ export class TelemetryService {
   }
 
   private async exportOtlp(
-    points: ReturnType<MetricsCollector["recentPoints"]>
+    points: any[]
   ): Promise<void> {
     try {
       await fetch(this.config.exportOtlpUrl!, {

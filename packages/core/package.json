@@ -3,11 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./tools": "./src/tools/index.ts",
-    "./providers": "./src/providers/index.ts"
+    ".": "./dist/index.js",
+    "./tools": "./dist/tools/index.js",
+    "./tools/graphify": "./dist/tools/graphify/index.js",
+    "./providers": "./dist/providers/index.js",
+    "./hooks": "./dist/hooks/index.js",
+    "./session": "./dist/session/index.js",
+    "./skills": "./dist/skills/index.js",
+    "./mcp": "./dist/mcp/index.js",
+    "./commands": "./dist/commands/index.js",
+    "./planning": "./dist/planning/index.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",

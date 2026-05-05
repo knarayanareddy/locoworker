@@ -2,16 +2,16 @@
   "name": "@cowork/openclaw",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
-  "scripts": {
-    "typecheck": "tsc --noEmit"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./gateway": "./dist/gateway/index.js",
+    "./telegram": "./dist/telegram/index.js"
   },
   "dependencies": {
     "@cowork/core": "workspace:*",
     "@cowork/security": "workspace:*"
   },
-  "devDependencies": {
-    "typescript": "^5.4.0",
-    "bun-types": "latest"
-  }
+  "devDependencies": { "typescript": "^5.4.0", "@types/bun": "latest" }
 }

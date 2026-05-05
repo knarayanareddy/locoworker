@@ -2,12 +2,14 @@
   "name": "@cowork/security",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
-  "dependencies": {
-    "@cowork/core": "workspace:*"
+  "exports": {
+    ".": "./src/index.ts",
+    "./audit": "./src/audit/index.ts",
+    "./scrub": "./src/scrub/index.ts",
+    "./sandbox": "./src/sandbox/index.ts"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "bun-types": "latest"
+    "@types/bun": "latest"
   }
 }

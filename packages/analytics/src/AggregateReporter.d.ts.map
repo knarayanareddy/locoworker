@@ -1,0 +1,1 @@
+{"version":3,"file":"AggregateReporter.d.ts","sourceRoot":"","sources":["AggregateReporter.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAoB,eAAe,EAAiB,MAAM,YAAY,CAAC;AAEnF,qBAAa,iBAAiB;IAC5B,OAAO,CAAC,YAAY,CAAS;;IAMvB,MAAM,CAAC,IAAI,SAAK,GAAG,OAAO,CAAC,eAAe,CAAC;IA+D3C,YAAY,CAAC,IAAI,SAAK,GAAG,OAAO,CAAC,MAAM,CAAC;YA2BhC,YAAY;CAkB3B"}

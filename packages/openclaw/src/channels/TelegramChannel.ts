@@ -1,71 +1,105 @@
-import { BaseChannel } from "../BaseChannel";
-import type { InboundMessage, OutboundMessage, ChannelType } from "../types";
+import { BaseChannel } from "./BaseChannel";
+import type { ChannelConfig, InboundMessage, OutboundMessage } from "../types";
+import { randomUUID } from "node:crypto";
 
+/**
+ * Telegram channel via the Bot API (long polling).
+ * Requires TELEGRAM_BOT_TOKEN in env.
+ * Uses the Telegram Bot API directly (no SDK dep — just fetch).
+ */
 export class TelegramChannel extends BaseChannel {
-  readonly type: ChannelType = "telegram";
-  readonly id: string;
   private token: string;
-  private offset = 0;
   private polling = false;
+  private offset = 0;
+  private pollTimer?: ReturnType<typeof setTimeout>;
 
-  constructor(id: string, token: string) {
-    super();
-    this.id = id;
-    this.token = token;
+  constructor(config: ChannelConfig) {
+    super(config);
+    this.token = process.env.TELEGRAM_BOT_TOKEN ?? (config.settings?.token as string ?? "");
+    if (!this.token) {
+      // Don't throw here to allow gateway to start even if one channel is misconfigured
+      console.warn("TelegramChannel: TELEGRAM_BOT_TOKEN not set, channel will be inactive");
+      this.token = ""; 
+    }
   }
 
   async start(): Promise<void> {
-    if (this.polling) return;
+    if (!this.token) return;
     this.polling = true;
-    void this.poll();
-    console.error(`[Telegram] Channel ${this.id} started.`);
+    this.poll();
   }
 
   async stop(): Promise<void> {
     this.polling = false;
+    if (this.pollTimer) clearTimeout(this.pollTimer);
   }
 
-  async send(targetId: string, message: OutboundMessage): Promise<void> {
-    const url = `https://api.telegram.org/bot${this.token}/sendMessage`;
-    await fetch(url, {
+  async send(msg: OutboundMessage): Promise<void> {
+    if (!this.token) return;
+    const body = {
+      chat_id: msg.channelId,
+      text: msg.text.slice(0, 4096),
+      parse_mode: msg.parseMarkdown ? "Markdown" : undefined,
+      reply_to_message_id: msg.replyToId,
+    };
+
+    const res = await fetch(`https://api.telegram.org/bot${this.token}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: targetId,
-        text: message.text,
-        reply_to_message_id: message.replyToId,
-      }),
+      body: JSON.stringify(body),
     });
+
+    if (!res.ok) {
+      const err = await res.text();
+      throw new Error(`Telegram send failed: ${err}`);
+    }
   }
 
   private async poll(): Promise<void> {
-    while (this.polling) {
-      try {
-        const url = `https://api.telegram.org/bot${this.token}/getUpdates?offset=${this.offset}&timeout=30`;
-        const res = await fetch(url);
-        const data = await res.json();
+    if (!this.polling || !this.token) return;
 
-        if (data.ok && data.result.length > 0) {
-          for (const update of data.result) {
-            this.offset = update.update_id + 1;
-            if (update.message) {
-              this.emitMessage({
-                id: String(update.message.message_id),
-                channelId: this.id,
-                channelType: this.type,
-                senderId: String(update.message.chat.id),
-                senderName: update.message.from?.first_name ?? "Unknown",
-                text: update.message.text ?? "",
-                raw: update,
-                ts: Date.now(),
-              });
-            }
+    try {
+      const res = await fetch(
+        `https://api.telegram.org/bot${this.token}/getUpdates?timeout=25&offset=${this.offset}`,
+        { signal: AbortSignal.timeout(30_000) }
+      );
+      if (res.ok) {
+        const data = (await res.json()) as {
+          result: Array<{
+            update_id: number;
+            message?: {
+              message_id: number;
+              from?: { id: number; username?: string };
+              chat: { id: number };
+              text?: string;
+            };
+          }>;
+        };
+
+        for (const update of data.result) {
+          this.offset = update.update_id + 1;
+          if (update.message?.text) {
+            const msg: InboundMessage = {
+              id: randomUUID(),
+              channelType: "telegram",
+              channelId: String(update.message.chat.id),
+              userId: String(update.message.from?.id ?? "unknown"),
+              text: update.message.text,
+              ts: Date.now(),
+              metadata: { messageId: update.message.message_id },
+            };
+            this.emit_message(msg);
           }
         }
-      } catch (err) {
-        console.error(`[Telegram] Poll error:`, err);
-        await new Promise((r) => setTimeout(r, 5000));
       }
+    } catch { /* poll errors are transient */ }
+
+    if (this.polling) {
+      this.pollTimer = setTimeout(() => this.poll(), 1000);
     }
+  }
+
+  private get apiBase(): string {
+    return `https://api.telegram.org/bot${this.token}`;
   }
 }

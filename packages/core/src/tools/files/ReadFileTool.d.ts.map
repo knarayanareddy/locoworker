@@ -1,1 +1,0 @@
-{"version":3,"file":"ReadFileTool.d.ts","sourceRoot":"","sources":["ReadFileTool.ts"],"names":[],"mappings":"AAEA,OAAO,EAAE,KAAK,cAAc,EAAmD,MAAM,eAAe,CAAC;AAGrG,KAAK,SAAS,GAAG;IACf,IAAI,EAAE,MAAM,CAAC;IACb,MAAM,CAAC,EAAE,MAAM,CAAC;IAChB,KAAK,CAAC,EAAE,MAAM,CAAC;CAChB,CAAC;AAKF,eAAO,MAAM,YAAY,EAAE,cAAc,CAAC,SAAS,CAkDlD,CAAC"}

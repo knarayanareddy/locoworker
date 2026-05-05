@@ -1,4 +1,4 @@
-import type { Span, SpanStatus, SpanEvent, Trace } from "./types";
+import type { Span, SpanStatus, Trace } from "./types";
 import { randomUUID } from "node:crypto";
 
 export class Tracer {

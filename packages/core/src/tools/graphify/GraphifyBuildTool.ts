@@ -35,31 +35,32 @@ export function makeGraphifyBuildTool(session: GraphifySession): ToolDefinition<
       const root = resolve(ctx.workingDirectory, input.path ?? ".");
       const outDir = resolve(root, input.output ?? "graphify-out");
       try {
-        const builder = new KnowledgeGraphBuilder({
-          projectRoot: root,
-          outputDir: outDir,
-        });
-        const result = await builder.build();
-        const { snapshot, graph } = result;
+        const builder = new KnowledgeGraphBuilder();
+        const result = await builder.build({ rootDir: root });
+        const { graph } = result;
 
+        // Save to storage
         const storage = new GraphStorage(outDir);
-        // builder.build already saves snapshot, but we'll be explicit if needed.
-        // await storage.save(snapshot); 
+        const snapshot = graph.toSnapshot({
+          builtAt: new Date().toISOString(),
+          rootDir: root,
+          fileCount: result.filesProcessed,
+          nodeCount: result.nodesCreated,
+          edgeCount: result.edgesCreated,
+          languages: [],
+          totalSourceBytes: 0,
+        });
+        await storage.save(snapshot);
 
-        const report = buildGraphReport(graph, snapshot);
-        await storage.writeReport(report.markdown);
+        const reportContent = buildGraphReport(result, root);
+        await storage.writeReport(reportContent);
 
         session.set(graph, root);
 
-        const tokensRaw = Math.ceil((snapshot.metadata as any).totalSourceBytes / 4) || 0;
-        const tokensReport = Math.ceil(report.markdown.length / 4);
-        const ratio = tokensReport > 0 ? (tokensRaw / tokensReport).toFixed(1) : "∞";
-
         return ok(
           [
-            `Built graph: ${result.nodeCount} nodes, ${result.edgeCount} edges, ${result.filesProcessed} files.`,
+            `Built graph: ${result.nodesCreated} nodes, ${result.edgesCreated} edges, ${result.filesProcessed} files.`,
             `Output: ${outDir}/graph.json + ${outDir}/GRAPH_REPORT.md`,
-            `Token reduction: ~${tokensRaw.toLocaleString()} raw tokens → ~${tokensReport.toLocaleString()} report tokens (${ratio}x).`,
             "",
             `Next: read GRAPH_REPORT.md before navigating, then use GraphifyQuery for symbol/path lookups.`,
           ].join("\n"),

@@ -19,6 +19,8 @@ export function buildToolMap(tools: ToolDefinition[]): Map<string, ToolDefinitio
   return new Map(tools.map((t) => [t.name, t]));
 }
 
+export * from "./memory/index.js";
+
 export {
   BashTool,
   ReadFileTool,

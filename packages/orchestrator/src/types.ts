@@ -1,25 +1,43 @@
-import type { ToolDefinition } from "@cowork/core";
+export type AgentRole =
+  | "planner"    // breaks goal into tasks
+  | "executor"   // runs a specific task with tools
+  | "reviewer"   // reviews executor output and decides pass/fail/retry
+  | "synthesizer" // combines outputs into final answer
+  | "critic";    // adversarial — challenges assumptions
 
-export type AgentRole = "planner" | "executor" | "synthesizer" | "reviewer" | "critic";
+export interface AgentSpec {
+  id: string;
+  role: AgentRole;
+  systemPromptOverride?: string;
+  tools?: string[];     // tool names available to this agent (subset of global tools)
+  maxTurns?: number;
+  model?: string;       // override base model for this agent
+}
 
-export interface OrchestratorPlan {
+export interface OrchestrationPlan {
   goal: string;
   tasks: Array<{
-    id: string;
+    taskId: string;
     description: string;
-    dependencies: string[]; // ids
-    assignedRole: AgentRole;
-    status: "pending" | "running" | "completed" | "failed";
-    result?: string;
+    assignedTo: AgentRole;
+    dependsOn: string[];  // taskId list — DAG
   }>;
 }
 
-export interface OrchestratorConfig {
-  projectRoot: string;
-  provider: string;
-  model: string;
-  apiKey?: string;
-  baseUrl?: string;
-  tools: ToolDefinition[];
-  maxParallelTasks?: number; // default 1
+export interface TaskResult {
+  taskId: string;
+  agentId: string;
+  role: AgentRole;
+  output: string;
+  status: "done" | "failed" | "needs_review";
+  reviewNotes?: string;
+}
+
+export interface OrchestrationResult {
+  goal: string;
+  plan: OrchestrationPlan;
+  taskResults: TaskResult[];
+  synthesis: string;
+  totalTurns: number;
+  completedAt: string;
 }

@@ -1,14 +1,15 @@
 // packages/core/src/memdir/MemorySystem.ts
 // PHASE 5 FIX: embedderApiKey is now passed through to HybridSearch → Embedder.
 
-import { join } from "node:path";
+import { join, basename, resolve } from "node:path";
 import { homedir } from "node:os";
-import { basename, resolve } from "node:path";
 import { MemoryStore } from "./MemoryStore.js";
 import { MemoryIndex } from "./MemoryIndex.js";
 import { TranscriptLog } from "./Transcript.js";
 import { HybridSearch } from "./HybridSearch.js";
+import { getCoworkHome } from "../state/Settings.js";
 import type { MemoryEntry, MemoryType } from "./MemoryTypes.js";
+import type { Message } from "../types.js";
 
 export interface MemorySystemOptions {
   projectRoot: string;
@@ -31,7 +32,7 @@ export class MemorySystem {
 
   static rootFor(projectRoot: string): string {
     const key = sanitize(basename(resolve(projectRoot)));
-    return join(homedir(), ".cowork", "projects", key);
+    return join(getCoworkHome(), "projects", key);
   }
 
   constructor(opts: MemorySystemOptions) {
@@ -66,16 +67,21 @@ export class MemorySystem {
     return this.store.list(filter);
   }
 
-  async query(text: string, limit = 10, filter?: { type?: MemoryType }): Promise<MemoryEntry[]> {
+  async query(text: string, limit = 10, filter?: { type?: MemoryType }): Promise<any[]> {
     const candidates = await this.store.list(filter ? { type: filter.type, limit: 200 } : { limit: 200 });
-    return this.search.search(text, candidates, limit);
+    const results = await this.search.search(text, candidates, limit);
+    return results;
+  }
+
+  async rebuildIndex(): Promise<void> {
+    await this.index.rebuild(await this.store.list());
   }
 
   async readIndex(): Promise<string> {
     return this.index.read();
   }
 
-  async appendTranscript(sessionId: string, role: string, content: string): Promise<void> {
-    await this.transcript.append(sessionId, role, content);
+  async appendTranscript(sessionId: string, messages: Message[]): Promise<void> {
+    await this.transcript.append(sessionId, messages);
   }
 }

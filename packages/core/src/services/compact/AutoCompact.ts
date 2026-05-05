@@ -44,7 +44,7 @@ export class AutoCompactor {
   private disabled = false;
 
   constructor(
-    private readonly engine: QueryEngine,
+    public readonly engine: QueryEngine,
     private readonly options: AutoCompactOptions = DEFAULT_AUTO_COMPACT_OPTIONS,
   ) {}
 

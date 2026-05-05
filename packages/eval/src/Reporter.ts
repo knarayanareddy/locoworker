@@ -1,6 +1,6 @@
-import type { SuiteResult, EvalResult } from "./types";
+import type { SuiteResult } from "./types";
 import { MemorySystem } from "@cowork/core";
-import path from "path";
+import path from "node:path";
 import { mkdir } from "node:fs/promises";
 
 export class Reporter {

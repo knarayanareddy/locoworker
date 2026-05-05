@@ -2,12 +2,21 @@
   "name": "@cowork/telemetry",
   "version": "0.1.0",
   "type": "module",
-  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./cost": "./src/cost/index.ts",
+    "./trace": "./src/trace/index.ts"
+  },
   "dependencies": {
-    "@cowork/core": "workspace:*"
+    "@opentelemetry/api": "^1.7.0",
+    "@opentelemetry/sdk-node": "^0.48.0",
+    "@opentelemetry/sdk-trace-base": "^1.21.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.48.0",
+    "@opentelemetry/resources": "^1.21.0",
+    "@opentelemetry/semantic-conventions": "^1.21.0"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
-    "bun-types": "latest"
+    "@types/bun": "latest"
   }
 }

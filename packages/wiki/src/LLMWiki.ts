@@ -1,6 +1,6 @@
 import type { WikiPage, WikiIndex, LLMWikiConfig } from "./types";
 import { MemorySystem } from "@cowork/core";
-import path from "path";
+import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { Glob } from "bun";
 
@@ -12,7 +12,7 @@ export class LLMWiki {
       projectRoot: config.projectRoot,
       wikiDir:
         config.wikiDir ??
-        path.join((MemorySystem as any).rootFor(config.projectRoot), "wiki"),
+        path.join(MemorySystem.rootFor(config.projectRoot), "wiki"),
       maxPageBodyChars: config.maxPageBodyChars ?? 8000,
     };
   }

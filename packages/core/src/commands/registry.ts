@@ -5,7 +5,20 @@ import type { SlashCommand, SlashCommandContext } from "./SlashCommand.js";
 import { memoryListCommand, memorySearchCommand, memoryClearCommand, dreamCommand }
   from "./memory.js";
 import { sessionListCommand } from "./session.js";
-import { skillCommand } from "./skills.js";
+import { sessionsCommand } from "./sessions.js";
+import { skillsCommand } from "./skills.js";
+import { telemetryCommand } from "./telemetry.js";
+import { auditCommand } from "./audit.js";
+import { analyticsCommand } from "./analytics.js";
+import { researchCommand } from "./research.js";
+import { councilCommand } from "./council.js";
+import { simulateCommand } from "./simulate.js";
+import { kairosCommand } from "./kairos.js";
+import { hermesCommand } from "./hermes.js";
+import { healthCommand } from "./health.js";
+import { ultraplanCommand } from "./ultraplan.js";
+import { forecastCommand } from "./miroforecast.js";
+
 
 export class SlashRegistry {
   private readonly commands = new Map<string, SlashCommand>();
@@ -21,6 +34,7 @@ export class SlashRegistry {
     const cmdName = spaceIdx === -1 ? withoutSlash : withoutSlash.slice(0, spaceIdx);
     const args = spaceIdx === -1 ? "" : withoutSlash.slice(spaceIdx + 1);
 
+
     // Exact match first
     let cmd = this.commands.get(cmdName);
 
@@ -35,7 +49,8 @@ export class SlashRegistry {
       return true;
     }
 
-    await cmd.execute(args, ctx);
+    const argsArr = args.trim().split(/\s+/).filter(Boolean);
+    await cmd.execute(argsArr, ctx);
     return true;
   }
 
@@ -51,7 +66,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "help",
     description: "List available commands",
-    async execute(_args, ctx) {
+    async execute(_args: string[], ctx) {
       const cmds = r.list();
       ctx.print("\nAvailable commands:");
       for (const c of cmds) {
@@ -64,7 +79,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "exit",
     description: "Exit the REPL",
-    async execute(_args, _ctx) {
+    async execute(_args: string[], _ctx) {
       process.exit(0);
     },
   });
@@ -72,7 +87,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "quit",
     description: "Exit the REPL",
-    async execute(_args, _ctx) {
+    async execute(_args: string[], _ctx) {
       process.exit(0);
     },
   });
@@ -80,7 +95,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "clear",
     description: "Clear the terminal",
-    async execute(_args, ctx) {
+    async execute(_args: string[], ctx) {
       process.stdout.write("\x1b[2J\x1b[H");
       ctx.print("Screen cleared.");
     },
@@ -89,7 +104,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "provider",
     description: "Show current provider and model",
-    async execute(_args, ctx) {
+    async execute(_args: string[], ctx) {
       ctx.print("Use --provider and --model flags to change provider at startup.");
     },
   });
@@ -97,7 +112,7 @@ export function defaultRegistry(): SlashRegistry {
   r.register({
     name: "compact",
     description: "Manually trigger context compaction",
-    async execute(_args, ctx) {
+    async execute(_args: string[], ctx) {
       if (!ctx.compressor) {
         ctx.print("No compressor configured.");
         return;
@@ -112,9 +127,23 @@ export function defaultRegistry(): SlashRegistry {
   r.register(memoryClearCommand);
   r.register(dreamCommand);
 
-  // Phase 5: session + skill commands
+  // Phase 5 & 6 commands
   r.register(sessionListCommand);
-  r.register(skillCommand);
+  r.register(sessionsCommand);
+  r.register(skillsCommand);
+  r.register(telemetryCommand);
+  r.register(auditCommand);
+  r.register(analyticsCommand);
+
+  // Phase 7 commands
+  r.register(researchCommand);
+  r.register(councilCommand);
+  r.register(simulateCommand);
+  r.register(kairosCommand);
+  r.register(hermesCommand);
+  r.register(healthCommand);
+  r.register(ultraplanCommand);
+  r.register(forecastCommand);
 
   return r;
 }

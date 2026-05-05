@@ -6,8 +6,9 @@
 import { homedir } from "node:os";
 import path from "path";
 import mkdir from "node:fs/promises";
+import { getCoworkHome } from "../state/Settings.js";
 
-const HISTORY_FILE = path.join(homedir(), ".cowork", "repl-history");
+const HISTORY_FILE = path.join(getCoworkHome(), "repl-history");
 const MAX_HISTORY = 1000;
 
 export class HistoryManager {

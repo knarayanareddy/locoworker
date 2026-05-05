@@ -74,7 +74,7 @@ export class AnthropicStreamProvider implements StreamingProvider {
           if (event.usage) {
             yield {
               type: "stop",
-              stopReason: event.delta.stop_reason ?? "end_turn",
+              stopReason: (event.delta as any).stop_reason ?? "end_turn",
               usage: {
                 inputTokens: 0,
                 outputTokens: event.usage.output_tokens,
