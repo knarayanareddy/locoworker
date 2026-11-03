@@ -7,7 +7,8 @@
     "cowork-init": "./src/bin.ts"
   },
   "dependencies": {
-    "@cowork/core": "workspace:*"
+    "@cowork/core": "workspace:*",
+    "@cowork/security": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

@@ -12,6 +12,14 @@ import { CostTracker } from "@cowork/telemetry/cost";
 import { AuditLog } from "@cowork/security/audit";
 import { HttpGuard } from "@cowork/security/network";
 import { filterEnv } from "@cowork/security/env";
+import {
+  mergeResourceLimits,
+  readNdjsonFileTail,
+  readBoundedText,
+  isBodyTooLarge,
+  serializeAuditExport,
+  type ResourceLimits,
+} from "@cowork/security/utils";
 import { WikiStore } from "@cowork/wiki";
 import { defaultKairosTasks } from "@cowork/kairos";
 import { join } from "node:path";
@@ -25,6 +33,8 @@ export interface DashboardConfig {
   authToken?: string;
   /** Bind host (default 127.0.0.1). */
   hostname?: string;
+  /** Trusted operator-level resource limits (R-11); never read from a clone. */
+  limits?: Partial<ResourceLimits>;
 }
 
 const ALLOWED_ACTIONS = new Set(["build-graph", "export-logs"]);
@@ -40,9 +50,19 @@ const ALLOWED_ACTIONS = new Set(["build-graph", "export-logs"]);
 export class DashboardRouter {
   private config: DashboardConfig;
   private guard: HttpGuard | null = null;
+  private readonly limits: ResourceLimits;
 
   constructor(config: DashboardConfig) {
     this.config = config;
+    this.limits = mergeResourceLimits(config.limits);
+  }
+
+  /** Bounded NDJSON tail for dashboard feeds (kairos/research/tasks/...). */
+  private async readNdjson(path: string, limit: number): Promise<unknown[]> {
+    return readNdjsonFileTail(path, limit, {
+      maxScanBytes: this.limits.maxAuditScanBytes,
+      maxLineBytes: this.limits.maxAuditLineBytes,
+    });
   }
 
   async start(): Promise<void> {
@@ -110,8 +130,12 @@ export class DashboardRouter {
     }
 
     if (url.pathname === "/api/audit") {
-      const limit = Math.min(Number(url.searchParams.get("limit") ?? 200) || 200, 1000);
-      const log = new AuditLog({ projectRoot, sessionId: "dashboard" });
+      const limit = Math.min(
+        Number(url.searchParams.get("limit") ?? 200) || 200,
+        1000,
+        this.limits.maxAuditRows,
+      );
+      const log = new AuditLog({ projectRoot, sessionId: "dashboard", limits: this.limits });
       await log.init();
       return json(await log.read(limit));
     }
@@ -152,19 +176,19 @@ export class DashboardRouter {
     if (url.pathname === "/api/kairos/tasks") return json(defaultKairosTasks());
 
     if (url.pathname === "/api/kairos/log") {
-      return json(await readNdjson(join(projectRoot, ".cowork", "kairos", "daemon.ndjson"), 50));
+      return json(await this.readNdjson(join(projectRoot, ".cowork", "kairos", "daemon.ndjson"), 50));
     }
 
     if (url.pathname === "/api/research/experiments") {
-      return json(await readNdjson(join(projectRoot, ".cowork", "research", "research-jobs.ndjson"), 50));
+      return json(await this.readNdjson(join(projectRoot, ".cowork", "research", "research-jobs.ndjson"), 50));
     }
 
     if (url.pathname === "/api/simulation/agents") {
-      return json(await readNdjson(join(projectRoot, ".cowork", "mirofish", "agents.ndjson"), 50));
+      return json(await this.readNdjson(join(projectRoot, ".cowork", "mirofish", "agents.ndjson"), 50));
     }
 
     if (url.pathname === "/api/tasks") {
-      return json(await readNdjson(join(projectRoot, ".cowork", "tasks.ndjson"), 200));
+      return json(await this.readNdjson(join(projectRoot, ".cowork", "tasks.ndjson"), 200));
     }
 
     // Channel status is derived from configuration, never hard-coded as
@@ -200,7 +224,7 @@ export class DashboardRouter {
       if (daemonPid) {
         try { process.kill(Number(daemonPid), 0); daemonRunning = true; } catch { /* not running */ }
       }
-      const log = new AuditLog({ projectRoot, sessionId: "dashboard" });
+      const log = new AuditLog({ projectRoot, sessionId: "dashboard", limits: this.limits });
       await log.init();
       return json({
         project: projectRoot.split("/").pop(),
@@ -210,7 +234,7 @@ export class DashboardRouter {
         stats: {
           memory: (await readdir(memoryRoot).catch(() => [])).length,
           wiki: (await readdir(join(projectRoot, ".cowork", "wiki")).catch(() => [])).length,
-          audit: (await log.read(0)).length,
+          audit: await log.countRecent(1_000),
         },
       });
     }
@@ -218,8 +242,12 @@ export class DashboardRouter {
     if (url.pathname === "/api/settings") {
       if (req.method === "POST") {
         let patch: unknown;
-        try { patch = await req.json(); }
-        catch { return json({ error: "Invalid JSON" }, 400); }
+        try {
+          patch = JSON.parse(await readBoundedText(req, this.limits.maxRequestBytes));
+        } catch (err) {
+          if (isBodyTooLarge(err)) return json({ error: "Message too long" }, 413);
+          return json({ error: "Invalid JSON" }, 400);
+        }
         let validated: Record<string, unknown>;
         try { validated = validateSettingsPatch(patch) as Record<string, unknown>; }
         catch (e) { return json({ error: e instanceof Error ? e.message : String(e) }, 400); }
@@ -260,30 +288,23 @@ export class DashboardRouter {
         proc.unref();
         return json({ status: "started", action, pid: proc.pid });
       }
-      const log = new AuditLog({ projectRoot, sessionId: "dashboard" });
+      const log = new AuditLog({ projectRoot, sessionId: "dashboard", limits: this.limits });
       await log.init();
-      const entries = await log.read(0);
-      return new Response(JSON.stringify(entries, null, 2), {
+      // R-11: both the row count and the serialised body are hard-capped.
+      const rows = await log.readTail(this.limits.maxAuditExportRows);
+      const exported = serializeAuditExport(rows, this.limits.maxAuditExportBytes);
+      return new Response(exported.body, {
         headers: {
           "Content-Type": "application/json",
           "Content-Disposition": 'attachment; filename="cowork-audit-log.json"',
+          "Cache-Control": "no-store",
+          "X-Cowork-Audit-Rows": String(exported.included),
+          "X-Cowork-Audit-Truncated": exported.truncated ? "true" : "false",
         },
       });
     }
 
     return json({ error: "Not found" }, 404);
-  }
-}
-
-async function readNdjson(path: string, limit: number): Promise<unknown[]> {
-  try {
-    const raw = await readFile(path, "utf-8");
-    const rows = raw.split("\n").filter(Boolean).flatMap((line) => {
-      try { return [JSON.parse(line)]; } catch { return []; }
-    });
-    return rows.slice(-limit);
-  } catch {
-    return [];
   }
 }
 

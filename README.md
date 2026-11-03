@@ -27,7 +27,7 @@ MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 | Eval harness | ✅ working | `bun run eval` uses built-in suites; `bun run eval:custom` needs `.cowork/evals/*.eval.json` |
 | Tests & CI | ✅ working | `bun test` (107 tests, incl. security regressions + reviewed tool manifest) and `.github/workflows/ci.yml` |
 | Container isolation | ⚠️ opt-in | `COWORK_SANDBOX_MODE=docker|podman` requires a local container runtime; default is unsandboxed |
-| Network sandbox | ✅ working | `HttpFetch` blocks private/special-use IPs, rejects URL credentials and re-checks resolved IPs; the public-host allowlist is opt-in via `COWORK_SANDBOX_ENABLED` |
+| Network sandbox | ✅ working | `HttpFetch` blocks private/special-use IPs, rejects URL credentials and pins validated DNS answers; the public-host allowlist is **on by default** (opt out with `COWORK_SANDBOX_ENABLED=false`) |
 | Electron desktop / plugins / voice / marketplace | ⚠️ experimental or stubs | `packages/plugins` is a typed stub; voice needs external API keys |
 | tree-sitter AST parsing, Tauri shell, TOTP gateway auth | ❌ not present | TOTP exists only as an RFC 6238 utility; gateways use Bearer tokens + HMAC |
 
@@ -86,18 +86,36 @@ bun run kairos             # standalone Kairos daemon
 - **File paths** used by file tools are confined to the project root, including
   symlink resolution. Shell commands are not individually sandboxed, and IDs
   used as filenames are validated against a strict single-segment allowlist.
-- **Child processes** receive a filtered environment (`filterEnv`; currently a
-  denylist, not an allowlist). Tool output and audit logs are scrubbed of
-  credential patterns before truncation.
+- **Child processes** receive a filtered environment (`filterEnv`, a strict
+  allowlist). Tool output and audit logs are scrubbed of credential patterns
+  before truncation.
 - **State files** under `COWORK_HOME` and `<project>/.cowork` are created `0600`
   inside `0700` directories, so transcripts, sessions, memory, audit events and
   graph snapshots are not world-readable.
 - **Project config is untrusted**: `<project>/.cowork/settings.json` cannot set
   API keys, base URLs, MCP servers, permission modes, or sandbox settings. Put
   those in `~/.cowork/settings.json` or environment variables.
+- **Resource limits (R-11):** gateway sessions/outboxes are bounded LRU maps
+  with TTLs and byte ceilings; Hermes `/sse` has a connection cap and an
+  absolute lifetime; HTTP bodies are capped before JSON parsing; MCP stdio
+  buffers and in-flight requests are bounded and timed out; audit reads use a
+  bounded reverse tail and dashboard exports cap both rows and bytes. All caps
+  come from trusted environment variables (see `.env.example`), never from a
+  cloned repository's settings.
+- **Supply chain (R-13):** MCP servers only start after explicit per-server
+  consent and an operator allowlist of executables; child environments are
+  strictly filtered (no credentials, no `NODE_OPTIONS`/`LD_PRELOAD`/`PATH`
+  overrides). MCP tool descriptions are framed as untrusted data, schemas are
+  validated, tool counts are capped and every MCP tool requires approval.
+  Marketplace plugins require a detached Ed25519 signature from a trusted key
+  plus an integrity hash, verified again at load time; bundles and manifests
+  are written `0600`. Template paths cannot escape the target directory or hit
+  symlinks/sensitive names, and `postInstall` is off by default — when enabled
+  it is argv-only, allowlisted, timed out and env-filtered. All opt-in knobs
+  are in `.env.example`.
 - `JsEval` is permanently disabled; `HttpFetch` blocks non-global addresses and
-  re-checks DNS (the public-host allowlist is opt-in); `GitCommit` requires
-  explicit file paths and approval.
+  pins validated DNS answers (the public-host allowlist is on by default);
+  `GitCommit` requires explicit file paths and approval.
 
 See `.env.example` for the complete, current list of environment variables,
 `SECURITY_REVIEW.md` for the OWASP-mapped security review and its residual risks,

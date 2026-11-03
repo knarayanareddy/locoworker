@@ -2,6 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { RateLimiter } from "./RateLimiter.js";
 import { scrubSecrets } from "@cowork/security/scrub";
 import { HttpGuard, WebhookReplayCache, verifyWebhookSignature } from "@cowork/security/network";
+import {
+  BoundedMap,
+  mergeResourceLimits,
+  createEvictionLogger,
+  readBoundedText,
+  isBodyTooLarge,
+  type ResourceLimits,
+  type BoundedMapStats,
+} from "@cowork/security/utils";
 import type {
   GatewayConfig,
   InboundMessage,
@@ -10,6 +19,14 @@ import type {
 } from "./types.js";
 
 const MAX_TEXT_LENGTH = 8_000;
+const MAX_OUTBOX_MESSAGES = 50;
+
+/** Approximate in-memory cost of one outbox (characters are ~1 byte here). */
+function estimateOutbox(key: string, messages: OutboundMessage[]): number {
+  let bytes = key.length + 16;
+  for (const message of messages) bytes += (message.text?.length ?? 0) + 96;
+  return bytes;
+}
 
 /**
  * Canonical OpenClaw HTTP gateway.
@@ -21,19 +38,32 @@ const MAX_TEXT_LENGTH = 8_000;
  * of token A cannot claim to be sender B, read B's outbox, or circumvent the
  * rate limiter by rotating `from`. Distinct identities are granted distinct
  * tokens via `GatewayConfig.senderTokens`.
+ *
+ * R-11: request bodies are capped *before* parsing, and the outbox map is
+ * bounded by entry count, approximate bytes and TTL.
  */
 export class GatewayServer {
   private rateLimiter: RateLimiter;
   private server: ReturnType<typeof Bun.serve> | null = null;
   private handler: MessageHandler | null = null;
-  /** Outbox is scoped per sender: one user cannot read another user's replies. */
-  private outboxes = new Map<string, OutboundMessage[]>();
+  /** Outbox is scoped per sender and bounded: no unbounded principals. */
+  private readonly outboxes: BoundedMap<string, OutboundMessage[]>;
+  private readonly limits: ResourceLimits;
   private guard: HttpGuard | null = null;
   /** Rejects replayed webhook bodies / reused nonces. */
   private readonly webhookReplay = new WebhookReplayCache();
 
   constructor(private config: GatewayConfig) {
     this.rateLimiter = new RateLimiter(config.rateLimitPerMinute);
+    this.limits = mergeResourceLimits(config.limits);
+    const logEviction = createEvictionLogger("gateway outboxes");
+    this.outboxes = new BoundedMap<string, OutboundMessage[]>({
+      maxEntries: this.limits.maxOutboxPrincipals,
+      maxBytes: this.limits.maxStateBytes,
+      ttlMs: this.limits.outboxTtlMs,
+      estimateSize: estimateOutbox,
+      onEvict: (_key, _value, reason) => logEviction(reason),
+    });
   }
 
   onMessage(handler: MessageHandler): void {
@@ -42,6 +72,11 @@ export class GatewayServer {
 
   get httpGuard(): HttpGuard | null {
     return this.guard;
+  }
+
+  /** Live outbox bounds/eviction counters (useful for load tests and ops). */
+  get resourceStats(): BoundedMapStats {
+    return this.outboxes.stats();
   }
 
   /** The port actually bound (useful when config.port is 0 for an ephemeral port). */
@@ -110,7 +145,7 @@ export class GatewayServer {
     }
     const denied = this.validateSender(principal);
     if (denied) return denied;
-    return Response.json(this.outboxes.get(principal)?.slice(-50) ?? []);
+    return Response.json(this.outboxes.get(principal)?.slice(-MAX_OUTBOX_MESSAGES) ?? []);
   }
 
   private validateSender(from: string): Response | null {
@@ -120,13 +155,37 @@ export class GatewayServer {
     return null;
   }
 
-  private async handleMessageRequest(req: Request): Promise<Response> {
-    let body: { from?: string; text?: string; metadata?: Record<string, unknown> };
+  /** Read the exact raw body under a hard byte ceiling (before any allocation). */
+  private async readRaw(req: Request): Promise<
+    | { ok: true; raw: string }
+    | { ok: false; response: Response }
+  > {
     try {
-      body = (await req.json()) as typeof body;
-    } catch {
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
+      return { ok: true, raw: await readBoundedText(req, this.limits.maxRequestBytes) };
+    } catch (err) {
+      if (isBodyTooLarge(err)) {
+        return { ok: false, response: Response.json({ error: "Message too long" }, { status: 413 }) };
+      }
+      return { ok: false, response: Response.json({ error: "Invalid request body" }, { status: 400 }) };
     }
+  }
+
+  private parseObject<T>(raw: string): T | null {
+    try {
+      const value = JSON.parse(raw) as T;
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  private async handleMessageRequest(req: Request): Promise<Response> {
+    const read = await this.readRaw(req);
+    if (!read.ok) return read.response;
+    const body = this.parseObject<{ from?: string; text?: string; metadata?: Record<string, unknown> }>(read.raw);
+    if (!body) return Response.json({ error: "Invalid JSON" }, { status: 400 });
+
     const principal = this.identityFor(req);
     const claimed = body.from === undefined ? undefined : body.from.slice(0, 128);
     if (claimed && claimed !== principal) {
@@ -157,9 +216,11 @@ export class GatewayServer {
     if (!this.config.webhookSecret) {
       return Response.json({ error: "Webhook ingress is not configured" }, { status: 404 });
     }
-    const raw = await req.text();
+    const read = await this.readRaw(req);
+    if (!read.ok) return read.response;
+    // HMAC is verified over the exact bounded raw body, *before* JSON parsing.
     if (!verifyWebhookSignature(
-      raw,
+      read.raw,
       req.headers.get("x-cowork-signature"),
       this.config.webhookSecret,
       {
@@ -170,12 +231,8 @@ export class GatewayServer {
     )) {
       return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
-    let payload: { from?: string; text?: string; message?: string };
-    try {
-      payload = JSON.parse(raw) as typeof payload;
-    } catch {
-      return Response.json({ error: "Invalid JSON" }, { status: 400 });
-    }
+    const payload = this.parseObject<{ from?: string; text?: string; message?: string }>(read.raw);
+    if (!payload) return Response.json({ error: "Invalid JSON" }, { status: 400 });
     const principal = this.identityFor(req);
     const source = (payload.from ?? "webhook").slice(0, 128);
     const text = payload.text ?? payload.message ?? "";
@@ -210,7 +267,9 @@ export class GatewayServer {
         status: "complete",
         timestamp: new Date().toISOString(),
       });
-      if (outbox.length > 50) outbox.shift();
+      if (outbox.length > MAX_OUTBOX_MESSAGES) {
+        outbox.splice(0, outbox.length - MAX_OUTBOX_MESSAGES);
+      }
       this.outboxes.set(inbound.from, outbox);
       return Response.json({ id: inbound.id, response: responseText });
     } catch (err) {

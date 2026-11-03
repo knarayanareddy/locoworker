@@ -49,3 +49,6 @@ export class PluginRegistry {
     return this.plugins.get(name);
   }
 }
+
+export { PluginManager } from "./PluginManager";
+export type { LoadedPlugin } from "./PluginManager";

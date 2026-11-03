@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@cowork/core": "workspace:*"
+    "@cowork/core": "workspace:*",
+    "@cowork/marketplace": "workspace:*",
+    "@cowork/security": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

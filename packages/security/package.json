@@ -8,7 +8,11 @@
     "./scrub": "./src/scrub/index.ts",
     "./sandbox": "./src/sandbox/index.ts",
     "./env": "./src/env/index.ts",
-    "./network": "./src/network/index.ts"
+    "./network": "./src/network/index.ts",
+    "./utils": "./src/utils/index.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
