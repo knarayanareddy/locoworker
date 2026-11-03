@@ -263,6 +263,8 @@
       "version": "0.1.0",
       "dependencies": {
         "@cowork/core": "workspace:*",
+        "@cowork/marketplace": "workspace:*",
+        "@cowork/security": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.3.13",
@@ -306,6 +308,9 @@
     "packages/security": {
       "name": "@cowork/security",
       "version": "0.1.0",
+      "dependencies": {
+        "ajv": "^8.17.1",
+      },
       "devDependencies": {
         "@types/bun": "^1.3.13",
         "typescript": "^5.9.3",
@@ -330,6 +335,7 @@
       },
       "dependencies": {
         "@cowork/core": "workspace:*",
+        "@cowork/security": "workspace:*",
       },
       "devDependencies": {
         "bun-types": "^1.3.13",

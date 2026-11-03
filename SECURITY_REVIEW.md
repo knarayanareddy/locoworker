@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-03
 **Target:** `main` @ `43584eb` (PR #1 merged), then the follow-up work on branch `arena/f17dd9a4-locoworker`
-**Status:** P0 items implemented and verified; P1/P2 residual risks tracked below
+**Status:** P0 items implemented and verified; Phase A (R-11) and Phase B (R-13) of `PRODUCTION_READINESS_PLAN.md` are closed; P1/P2 residual risks tracked below
 **Companion documents:** `TOOLING_CURRENCY.md` (dependency/tooling audit), and an internal full-detail red-team report that is deliberately gitignored because it contains working exploit payloads.
 
 > This document is PR-safe: it describes findings and fixes at the level of
@@ -14,9 +14,11 @@
 ## 1. Summary
 
 A fresh OWASP Top 10 2021 / OWASP LLM Top 10 / CWE review of the merged build
-found **15 issues (7 High, 6 Medium, 2 Low)**. Most were **coverage gaps**, not
-broken primitives: the PR #1 controls were correct but only applied at two of
-five tool-execution choke points and to one of eight outbound HTTP call sites.
+found **16 issues (7 High, 7 Medium, 2 Low)**: 15 in the original review plus
+one Medium template path-traversal finding (R-16) surfaced during Phase B
+remediation. Most were **coverage gaps**, not broken primitives: the PR #1
+controls were correct but only applied at two of five tool-execution choke
+points and to one of eight outbound HTTP call sites.
 
 No default-reachable, unauthenticated remote code execution was found. Baseline
 verification on the merged build was clean (`typecheck` clean, 81 tests passing).
@@ -55,11 +57,12 @@ review's convention.
 | R-08 | Medium | Project settings could redirect provider/model and inflate limits | **Fixed** — those keys are now untrusted; numeric budgets clamped |
 | R-09 | Medium | `Read` could read secrets inside the project root; project context was prompt-injectable | **Fixed** — sensitive filename/directory denylist; `CLAUDE.md` / memory framed as untrusted data |
 | R-10 | Medium | `validateToolInput` was shallow (no nested/enum/union/format/size checks) | **Fixed** — Ajv with bounded structural pre-check (depth/node/size/cycle limits) |
-| R-11 | Medium | No request/session/stream limits | **Partial** — `guardedFetch` caps response bytes and enforces timeouts; gateway session/outbox maps and SSE connections remain unbounded |
+| R-11 | Medium | No request/session/stream limits | **Fixed** — bounded LRU+TTL maps for gateway sessions/outboxes, SSE connection cap + lifetime, bounded request bodies, MCP line/pending/timeouts, bounded audit tail reads and capped exports. Regressions: `bounded-map.test.ts`, `audit-tail.test.ts`, `limits.test.ts`, `sse-limits.test.ts`, `mcp-timeouts.test.ts` |
 | R-12 | Medium | Electron IPC open operations unvalidated; no CSP; Vite bound `0.0.0.0` | **Fixed** — scheme/path allowlists, CSP, loopback bind by default |
-| R-13 | Medium | MCP / marketplace / template supply chain | **Partial** — marketplace downloads hardened; MCP command allowlisting, detached plugin signatures and disabling template `postInstall` remain open |
+| R-13 | Medium | MCP / marketplace / template supply chain | **Fixed (Phase B)** — per-server consent + executable allowlist + filtered child env; descriptions framed as untrusted data with Ajv-validated schemas, tool caps/collision checks and mandatory approval; detached Ed25519 signature + integrity verification for plugin bundles (install and load time); `postInstall` opt-in, argv-only, allowlisted and env-filtered. Regressions: `mcp-hardening.test.ts`, `install-signature.test.ts`, `plugin-manager.test.ts`, `scaffolder.test.ts`, `tool-manifest.test.ts` |
 | R-14 | Low | Latent extended tools shipped; no CI guard on registered tool list | **Fixed** — reviewed manifest test (names, levels, approval flags, default registration) |
 | R-15 | Low | Error/log/scrubber hygiene; TOTP replay | **Partial** — dashboard errors no longer echo internal exceptions; log-schema validation, scrubber over-redaction and TOTP step tracking remain open |
+| R-16 | Medium | `Scaffolder` joined template file paths directly into the target directory, so a template could write outside the project or onto a sensitive filename | **Fixed (Phase B)** — `resolveScaffoldPath` rejects absolute paths, `../` escapes, symlinks in the writable chain and sensitive names, and writes with `O_NOFOLLOW`; built-in `.cowork/settings.json` and `.gitignore` remain allowed. Regression: `scaffolder.test.ts` |
 
 ---
 
@@ -81,13 +84,10 @@ review's convention.
 
 **P1**
 
-- **R-11:** gateway `userSessions` / `outboxes` maps and Hermes `/sse` streams
-  have no LRU/TTL or connection cap; `AuditLog.read()` still parses the whole
-  NDJSON file before slicing; dashboard log export is unbounded.
-- **R-13:** MCP stdio servers are spawned from a config file with
-  `{ ...process.env, ...config.env }`, tool descriptions are injected verbatim,
-  plugin bundles are not signature-verified, template `postInstall` still runs
-  via `bash -c`.
+> R-11 was closed on 2026-11-03 by Phase A, and R-13 (plus the new R-16) by
+> Phase B of `PRODUCTION_READINESS_PLAN.md`; see the rows above for the
+> regression suites. Both are now **Fixed**.
+
 - **Project settings:** `apiKey`/`baseUrl` and other sensitive keys are blocked,
   but `~/.cowork/settings.json` remains fully trusted (by design).
 
@@ -107,6 +107,15 @@ review's convention.
 - **Tooling:** TypeScript 7, Vite 8 and the provider SDK majors are still
   deferred (see `TOOLING_CURRENCY.md` § Implementation status). Electron was
   upgraded to a supported line.
+- **First-party spawn:** `apps/desktop/src/main.ts` spawns its own dashboard
+  server with the full parent environment. It is a trusted, first-party
+  process (not driven by a repository/MCP/template config) and is the single
+  documented exception in the "no spawn inherits raw `process.env`" guard in
+  `mcp-hardening.test.ts`. Every config-driven spawn uses `filterEnv` /
+  `buildMcpEnv`.
+- **Plugin execution:** signature verification is not sandboxing. Plugin code
+  is verified but still not executed in this release; a sandboxed runtime is
+  deferred to a later phase.
 
 ---
 
@@ -116,11 +125,11 @@ review's convention.
 |-------|--------|
 | `bun install --frozen-lockfile --ignore-scripts` | clean; repo-local security scanner runs on install |
 | `bun run typecheck` (`tsc -b` + frontend + desktop) | 0 errors |
-| `bun test` | **107 pass / 0 fail / 452 assertions across 16 files** |
-| New regression suites | `tool-manifest.test.ts`, `p0-2026-hardening.test.ts`, `p0-2026-network.test.ts` |
+| `bun test` | **175 pass / 0 fail / 712 assertions across 25 files** |
+| New regression suites | `tool-manifest.test.ts`, `p0-2026-hardening.test.ts`, `p0-2026-network.test.ts`; Phase A: `bounded-map.test.ts`, `audit-tail.test.ts`, `limits.test.ts`, `sse-limits.test.ts`, `mcp-timeouts.test.ts`; Phase B: `mcp-hardening.test.ts`, `install-signature.test.ts`, `plugin-manager.test.ts`, `scaffolder.test.ts` |
 | `bun run scan` (`bun pm scan`) | no advisories; self-test confirmed a fatal rule aborts the scan |
 | `bun run sbom` | CycloneDX 1.6 SBOM with 513 components |
-| `bun run build:graph` | 343 files / 1531 nodes / 2099 edges |
+| `bun run build:graph` | ✓ passes (counts vary with source size; see the CI run) |
 | `bun run cowork --help` | ok; unknown flag still exits 2 |
 | Local PoCs (harmless, from `/tmp`) | 18 IPv6/SSRF bypass URLs denied; symlink writes refused; replayed webhook rejected; crafted Host rejected; marketplace loopback download blocked |
 
@@ -131,12 +140,13 @@ before a write), not just the happy path.
 
 ## 6. Recommendations
 
-1. Add LRU/TTL caps to gateway session/outbox maps, SSE connection limits,
-   bounded tail reads for audit logs and a size cap on log export (R-11).
-2. Require explicit approval per MCP server, allowlist MCP executables, pass an
-   allowlisted env, add timeouts/line caps, treat descriptions as untrusted
-   data, verify detached plugin signatures and disable template `postInstall`
-   by default (R-13).
+1. ✅ **Done (Phase A).** LRU/TTL caps, SSE limits, bounded audit tail reads
+   and capped log exports are implemented with dedicated regression tests.
+2. ✅ **Done (Phase B).** Explicit approval per MCP server, executable
+   allowlist, filtered child env, untrusted-framed descriptions, validated
+   schemas, tool caps and approval gating, detached plugin signatures and
+   opt-in template `postInstall` are implemented with regression tests
+   (R-13 / R-16).
 3. Validate parsed log events, add cycle detection to `safeMetadata`, track
    last-accepted TOTP step, and cap attempts (R-15).
 4. Keep `security/advisories.json` and the SBOM under review as part of

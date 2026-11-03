@@ -1,8 +1,13 @@
 import type { MarketplaceIndex, MarketplaceEntry, InstallResult } from "./types";
 import { MemorySystem, assertSafeId, guardPath } from "@cowork/core";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/security/audit";
 import path from "path";
-import { mkdir } from "node:fs/promises";
 import { guardedFetch } from "@cowork/security/network";
+import {
+  loadTrustedPluginKeys,
+  verifyPluginBundle,
+  type InstalledPluginManifest,
+} from "./pluginSignature.js";
 
 // Default registry — can be overridden via env
 const DEFAULT_REGISTRY_URL =
@@ -11,14 +16,35 @@ const DEFAULT_REGISTRY_URL =
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
+export interface MarketplaceClientOptions {
+  /** Explicitly trusted Ed25519 public keys (tests / CLI). */
+  trustedKeys?: readonly string[];
+  /** Environment used for the trusted-key lookup. */
+  env?: NodeJS.ProcessEnv;
+  /** Inject the index instead of fetching it (deterministic tests). */
+  index?: MarketplaceIndex;
+  /** Inject a bundle instead of downloading it (deterministic tests). */
+  bundle?: (entry: MarketplaceEntry) => string | Promise<string>;
+}
+
 export class MarketplaceClient {
   private projectRoot: string;
   private registryUrl: string;
+  private options: MarketplaceClientOptions;
   private cachedIndex: { data: MarketplaceIndex; fetchedAt: number } | null = null;
 
-  constructor(projectRoot: string, registryUrl = DEFAULT_REGISTRY_URL) {
+  constructor(
+    projectRoot: string,
+    registryUrlOrOptions: string | MarketplaceClientOptions = DEFAULT_REGISTRY_URL,
+  ) {
     this.projectRoot = projectRoot;
-    this.registryUrl = registryUrl;
+    if (typeof registryUrlOrOptions === "string") {
+      this.registryUrl = registryUrlOrOptions;
+      this.options = {};
+    } else {
+      this.registryUrl = DEFAULT_REGISTRY_URL;
+      this.options = registryUrlOrOptions;
+    }
   }
 
   // ── Browse ──────────────────────────────────────────────────────────────────
@@ -76,46 +102,52 @@ export class MarketplaceClient {
       if (download.protocol !== "https:") {
         throw new Error("Marketplace downloadUrl must use https");
       }
-      const res = await guardedFetch(entry.downloadUrl, {}, {
-        context: "MarketplaceInstall",
-        maxResponseBytes: 1_000_000,
-      });
-      if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+      const pluginCode = await this.download(entry);
 
-      const pluginCode = await res.text();
+      // R-13: verify BEFORE creating any directory or writing any file.
+      // Trusted keys never come from the registry response.
+      const keys = await loadTrustedPluginKeys({
+        trustedKeys: this.options.trustedKeys,
+        env: this.options.env,
+      });
+      const verified = verifyPluginBundle(pluginCode, entry, keys);
+      if (!verified.ok) throw new Error(verified.error ?? "plugin verification failed");
+
       const pluginsRoot = path.join(MemorySystem.rootFor(this.projectRoot), "plugins");
       const pluginsDir = path.join(pluginsRoot, assertSafeId(pluginId, "plugin id"));
-      await mkdir(pluginsDir, { recursive: true, mode: 0o700 });
+      await ensurePrivateDir(pluginsDir);
 
       // The entrypoint comes from the remote registry: confine it to the
-      // plugin directory (reject ../ and absolute paths) before writing.
+      // plugin directory (reject ../, absolute paths and symlink escapes).
       const guarded = await guardPath(pluginsDir, entry.entrypoint ?? "index.js");
       if (guarded.error) throw new Error(guarded.error);
       const entryFile = guarded.path!;
-      await mkdir(path.dirname(entryFile), { recursive: true, mode: 0o700 });
-      await Bun.write(entryFile, pluginCode);
+      await ensurePrivateDir(path.dirname(entryFile));
 
-      // Write manifest
-      await Bun.write(
+      // O_NOFOLLOW + 0600: a pre-planted symlink must never be overwritten.
+      await writePrivateFile(entryFile, pluginCode);
+
+      const manifest: InstalledPluginManifest = {
+        id: entry.id,
+        name: entry.name,
+        version: entry.version,
+        entrypoint: entry.entrypoint ?? "index.js",
+        downloadUrl: entry.downloadUrl,
+        integrity: verified.integrity!,
+        signature: entry.signature!,
+        keyFingerprint: verified.keyFingerprint!,
+        installedAt: new Date().toISOString(),
+      };
+      await writePrivateFile(
         path.join(pluginsDir, "manifest.json"),
-        JSON.stringify(
-          {
-            id: entry.id,
-            name: entry.name,
-            version: entry.version,
-            entrypoint: entry.entrypoint,
-            installedAt: new Date().toISOString(),
-          },
-          null,
-          2
-        )
+        JSON.stringify(manifest, null, 2),
       );
 
       return {
         success: true,
         pluginId,
         version: entry.version,
-        installedAt: new Date().toISOString(),
+        installedAt: manifest.installedAt,
       };
     } catch (err) {
       return {
@@ -159,13 +191,27 @@ export class MarketplaceClient {
       license: plugin.license ?? "MIT",
       updatedAt: new Date().toISOString(),
       entrypoint: plugin.entrypoint ?? "dist/index.js",
+      signature: plugin.signature ?? "<base64 Ed25519 signature over canonical payload>",
+      integrity: plugin.integrity ?? "<sha512-<hex> of the bundle bytes>",
     };
     return JSON.stringify(entry, null, 2);
   }
 
   // ── Private ─────────────────────────────────────────────────────────────────
 
+  /** Test seam: inject a bundle instead of performing a network download. */
+  private async download(entry: MarketplaceEntry): Promise<string> {
+    if (this.options.bundle) return this.options.bundle(entry);
+    const res = await guardedFetch(entry.downloadUrl, {}, {
+      context: "MarketplaceInstall",
+      maxResponseBytes: 1_000_000,
+    });
+    if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
+    return res.text();
+  }
+
   private async fetchIndex(): Promise<MarketplaceIndex> {
+    if (this.options.index) return this.options.index;
     if (
       this.cachedIndex &&
       Date.now() - this.cachedIndex.fetchedAt < CACHE_TTL_MS

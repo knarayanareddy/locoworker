@@ -12,6 +12,12 @@ export interface MarketplaceEntry {
   downloads?: number;
   updatedAt: string;
   entrypoint: string;    // e.g. "dist/index.js"
+  /** Base64 Ed25519 signature over canonicalPluginPayload(id, version, entrypoint, downloadUrl, integrity). */
+  signature?: string;
+  /** `sha512-<hex>` of the exact bundle bytes. */
+  integrity?: string;
+  /** Optional label naming which trusted key signed this bundle. */
+  keyId?: string;
   peerDependencies?: Record<string, string>;
 }
 

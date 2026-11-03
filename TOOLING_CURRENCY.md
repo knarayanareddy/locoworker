@@ -32,6 +32,7 @@ the "before" state stays auditable.
 | **Provider SDK majors (`@anthropic-ai/sdk` 1.x, `openai` 7.x)** | ⏸ Deferred. Requires a review of `packages/core/src/providers/*` — the largest code change after Electron. |
 | **React / framer-motion / lucide / recharts / `@types/*` minors** | ⏸ Deferred. Routine, no matching advisories; batch with a frontend test pass. |
 | **Live OSV / npm audit in CI** | ⏸ Deferred. The scanner is offline-deterministic; feed the uploaded SBOM to an OSV scanner as a next step. |
+| **Phase A/B supply-chain and resource-limit work (2026-11-03)** | ✅ No external version changes. Phase A added one `ajv` dependency to `@cowork/security`; Phase B added only workspace references (`@cowork/templates` → security, `@cowork/plugins` → core/security/marketplace) and regenerated `bun.lock`. The version snapshot in §§3–5 is unchanged. |
 
 Electron was upgraded first because it was the only dependency with version-
 matched high-severity advisories and the only end-of-life runtime.

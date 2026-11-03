@@ -1,4 +1,5 @@
 import type { PermissionLevel, ResolvedSettings, AgentPolicy, ApprovalFn } from "@cowork/core";
+import type { ResourceLimits } from "@cowork/security/utils";
 
 export interface HermesConfig {
   transport: "stdio" | "sse";
@@ -19,6 +20,8 @@ export interface HermesConfig {
   settings?: ResolvedSettings;
   workingDirectory?: string;
   abortSignal?: AbortSignal;
+  /** Trusted operator-level resource limits (R-11); never read from a clone. */
+  limits?: Partial<ResourceLimits>;
 }
 
 export interface McpJsonRpcRequest {

@@ -1,3 +1,5 @@
+import type { ResourceLimits } from "@cowork/security/utils";
+
 export type MessageChannel = "telegram" | "http" | "webhook" | "websocket";
 export type MessageStatus = "queued" | "processing" | "complete" | "error";
 
@@ -38,6 +40,8 @@ export interface GatewayConfig {
   senderTokens?: Record<string, string>;
   /** If set, only these sender IDs may send messages. */
   allowedSenders?: string[];
+  /** Trusted operator-level resource limits (R-11); never read from a clone. */
+  limits?: Partial<ResourceLimits>;
 }
 
 export type MessageHandler = (message: InboundMessage) => Promise<string>;
