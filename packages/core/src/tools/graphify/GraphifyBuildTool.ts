@@ -18,7 +18,10 @@ export function makeGraphifyBuildTool(session: GraphifySession): ToolDefinition<
     name: "GraphifyBuild",
     description:
       "Build (or rebuild) the knowledge graph for the project. Writes graphify-out/graph.json and graphify-out/GRAPH_REPORT.md. Use this once at the start of a navigation-heavy task. After this completes, prefer GraphifyQuery over Glob/Grep.",
-    permissionLevel: PermissionLevel.READ_ONLY,
+    // Builds and writes graphify-out/graph.json + GRAPH_REPORT.md: this is a
+    // side-effecting tool, so READ_ONLY policies must never reach it.
+    permissionLevel: PermissionLevel.STANDARD,
+    requiresApproval: true,
     inputSchema: {
       type: "object",
       properties: {

@@ -1,4 +1,5 @@
 import type { SlashCommand } from "./SlashCommand.js";
+import { guardedFetch } from "@cowork/security/network";
 
 export const hermesCommand: SlashCommand = {
   name: "hermes",
@@ -11,8 +12,13 @@ export const hermesCommand: SlashCommand = {
     switch (subcommand) {
       case "status":
         try {
-          const resp = await fetch(`http://localhost:${port}/health`, {
+          const resp = await guardedFetch(`http://localhost:${port}/health`, {
             signal: AbortSignal.timeout(1000),
+          }, {
+            // Deliberate loopback probe of our own server; not a model URL.
+            allowPrivate: true,
+            context: "Hermes/health",
+            timeoutMs: 1000,
           });
           if (resp.ok) {
             const data = (await resp.json()) as { tools: string[] };

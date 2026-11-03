@@ -44,3 +44,6 @@ pnpm-lock.yaml
 # Local security review containing working exploit details — never publish.
 # The PR-safe, redacted version is SECURITY_REVIEW.md (tracked).
 RED_TEAM_REVIEW.md
+
+# Generated SBOM (bun run sbom); CI uploads it as an artifact
+sbom.cdx.json

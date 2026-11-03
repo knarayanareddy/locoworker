@@ -2,6 +2,7 @@ import type { MarketplaceIndex, MarketplaceEntry, InstallResult } from "./types"
 import { MemorySystem, assertSafeId, guardPath } from "@cowork/core";
 import path from "path";
 import { mkdir } from "node:fs/promises";
+import { guardedFetch } from "@cowork/security/network";
 
 // Default registry — can be overridden via env
 const DEFAULT_REGISTRY_URL =
@@ -69,8 +70,16 @@ export class MarketplaceClient {
     }
 
     try {
-      // Download plugin bundle
-      const res = await fetch(entry.downloadUrl);
+      // Plugin code comes from a remote registry: require HTTPS, go through
+      // the guarded fetch (allowlist + pinned DNS), and cap the bundle size.
+      const download = new URL(entry.downloadUrl);
+      if (download.protocol !== "https:") {
+        throw new Error("Marketplace downloadUrl must use https");
+      }
+      const res = await guardedFetch(entry.downloadUrl, {}, {
+        context: "MarketplaceInstall",
+        maxResponseBytes: 1_000_000,
+      });
       if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
 
       const pluginCode = await res.text();
@@ -165,8 +174,12 @@ export class MarketplaceClient {
     }
 
     try {
-      const res = await fetch(this.registryUrl, {
+      const res = await guardedFetch(this.registryUrl, {
         signal: AbortSignal.timeout(10_000),
+      }, {
+        context: "MarketplaceIndex",
+        maxResponseBytes: 2_000_000,
+        timeoutMs: 10_000,
       });
       if (!res.ok) throw new Error(`Registry fetch failed: ${res.statusText}`);
       const data = await res.json() as MarketplaceIndex;

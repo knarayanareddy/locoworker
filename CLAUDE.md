@@ -20,7 +20,7 @@ tree-sitter parsing, Tauri, Discord channel, TOTP-based gateway auth.
 
 ## Tech stack
 
-- Runtime: Bun (≥1.2; CI pins 1.4.4); language: TypeScript ESM (`.js` extension in imports).
+- Runtime: Bun (≥1.4.4, pinned by `packageManager` and CI); language: TypeScript ESM (`.js` extension in imports).
 - Storage: filesystem JSON / NDJSON under `COWORK_HOME` (default `~/.cowork`).
 - CLI: `apps/cowork-cli`; dashboard: `apps/dashboard` (built-in UI).
 
@@ -29,7 +29,9 @@ tree-sitter parsing, Tauri, Discord channel, TOTP-based gateway auth.
 ```bash
 bun install --ignore-scripts
 bun run typecheck     # tsc -b + frontend + desktop
-bun test              # 81 unit/integration tests (incl. security regressions)
+bun test              # 107 unit/integration tests (incl. security regressions)
+bun run scan          # bun pm scan against security/advisories.json
+bun run sbom          # generate sbom.cdx.json (CycloneDX 1.6)
 bun run cowork        # REPL
 bun run build:graph   # regenerate graphify-out/graph.json + GRAPH_REPORT.md
 bun run dashboard     # http://127.0.0.1:3720 (token printed to stderr)

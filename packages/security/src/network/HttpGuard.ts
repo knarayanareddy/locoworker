@@ -10,7 +10,7 @@
  * server. For local development we generate a random ephemeral token and
  * print it to stderr, but that is only permitted while bound to loopback.
  */
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export interface HttpGuardOptions {
   /** Human-readable name, used in startup messages. */
@@ -52,10 +52,15 @@ export function constantTimeEquals(a: string, b: string): boolean {
   return timingSafeEqual(left, right);
 }
 
-function jsonResponse(body: unknown, status: number): Response {
+function jsonResponse(body: unknown, status: number, extra?: Record<string, string>): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      ...extra,
+    },
   });
 }
 
@@ -67,6 +72,8 @@ export class HttpGuard {
   readonly token: string;
   readonly allowEphemeralToken: boolean;
   private readonly acceptedTokens: string[];
+  /** Failed-auth cooldowns, keyed by a hash of the presented credential. */
+  private readonly failures = new Map<string, { count: number; until: number }>();
 
   constructor(options: HttpGuardOptions) {
     const env = options.env ?? process.env;
@@ -142,16 +149,52 @@ export class HttpGuard {
     return header && header.trim().length > 0 ? header.trim() : null;
   }
 
+  private failureKey(req: Request, candidate: string | null): string {
+    const label = candidate ?? `${req.headers.get("user-agent") ?? ""}|${req.headers.get("x-cowork-client") ?? ""}`;
+    return createHash("sha256").update(label).digest("hex").slice(0, 24);
+  }
+
+  /** Reject Host headers that do not match the interface we bound to. */
+  private acceptableHost(hostHeader: string): boolean {
+    const bare = hostHeader.replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+    const bound = this.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return bare === bound || isLoopbackHost(bare);
+  }
+
   /** Returns a rejection Response, or null when the request is allowed. */
   authorize(req: Request): Response | null {
     const candidate = this.extractToken(req);
+    const key = this.failureKey(req, candidate);
+    const now = Date.now();
+    const failure = this.failures.get(key);
+    if (failure && failure.until > now) {
+      const seconds = Math.max(1, Math.ceil((failure.until - now) / 1000));
+      return jsonResponse(
+        { error: "Too many failed authentication attempts" },
+        429,
+        { "Retry-After": String(seconds) },
+      );
+    }
+
     const matched = candidate !== null &&
       this.acceptedTokens.some((token) => constantTimeEquals(candidate, token));
     if (!matched) {
+      // Exponential cooldown: brute-forcing a token becomes ~2^n slower.
+      const count = (failure?.count ?? 0) + 1;
+      const delay = Math.min(60_000, 250 * 2 ** Math.min(count, 8));
+      this.failures.set(key, { count, until: now + delay });
+      if (this.failures.size > 512) {
+        for (const [k, v] of this.failures) if (v.until < now) this.failures.delete(k);
+      }
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
+    this.failures.delete(key);
 
     if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS") {
+      const hostHeader = req.headers.get("host");
+      if (hostHeader && !this.acceptableHost(hostHeader)) {
+        return jsonResponse({ error: "Unexpected Host header" }, 403);
+      }
       const requestOrigin = new URL(req.url).origin;
       const origin = req.headers.get("origin");
       if (origin) {
@@ -161,7 +204,6 @@ export class HttpGuard {
         } catch {
           return jsonResponse({ error: "Invalid Origin header" }, 403);
         }
-        const hostHeader = req.headers.get("host");
         const sameOrigin =
           parsed.origin === requestOrigin ||
           (hostHeader !== null && parsed.host === hostHeader);
@@ -177,18 +219,56 @@ export class HttpGuard {
   }
 }
 
+/**
+ * Bounded replay cache for webhook nonces (or, for legacy senders, a digest
+ * of the exact signed body). Entries expire after `ttlMs`.
+ */
+export class WebhookReplayCache {
+  private readonly seen = new Map<string, number>();
+  constructor(private readonly ttlMs = 5 * 60_000) {}
+
+  check(key: string, now = Date.now()): boolean {
+    for (const [k, t] of this.seen) if (t + this.ttlMs < now) this.seen.delete(k);
+    if (this.seen.has(key)) return false;
+    this.seen.set(key, now);
+    return true;
+  }
+}
+
+export interface WebhookVerificationContext {
+  /** Unix ms; when supplied the HMAC covers `timestamp.nonce.rawBody`. */
+  timestamp?: string | null;
+  nonce?: string | null;
+  maxSkewMs?: number;
+  /** Enables replay rejection. Strongly recommended for every caller. */
+  replay?: WebhookReplayCache;
+}
+
 /** Verify an HMAC-SHA256 webhook signature over the exact raw body. */
 export function verifyWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
   secret: string,
+  ctx: WebhookVerificationContext = {},
 ): boolean {
   if (!signatureHeader || !secret) return false;
   const match = /^(?:sha256=)?([0-9a-fA-F]{64})$/.exec(signatureHeader.trim());
   if (!match?.[1]) return false;
-  const expected = createHmac("sha256", secret).update(rawBody, "utf8").digest("hex");
-  return constantTimeEquals(match[1].toLowerCase(), expected);
-}
 
-// Imported lazily to keep the module's public surface small.
-import { createHmac } from "node:crypto";
+  let payload = rawBody;
+  if (ctx.timestamp != null || ctx.nonce != null) {
+    const ts = Number(ctx.timestamp);
+    if (!Number.isFinite(ts) || Math.abs(Date.now() - ts) > (ctx.maxSkewMs ?? 300_000)) return false;
+    if (!ctx.nonce || !ctx.replay) return false;
+    payload = `${ctx.timestamp}.${ctx.nonce}.${rawBody}`;
+  }
+
+  const expected = createHmac("sha256", secret).update(payload, "utf8").digest("hex");
+  if (!constantTimeEquals(match[1].toLowerCase(), expected)) return false;
+
+  if (ctx.replay) {
+    const key = ctx.nonce ?? createHash("sha256").update(rawBody, "utf8").digest("hex");
+    if (!ctx.replay.check(key)) return false;
+  }
+  return true;
+}

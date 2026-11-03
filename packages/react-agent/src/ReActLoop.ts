@@ -15,7 +15,7 @@
  *   Final Answer: <answer>
  */
 
-import { QueryEngine, resolveProvider, type ToolDefinition, type ToolContext, type ResolvedSettings } from "@cowork/core";
+import { QueryEngine, resolveProvider, executeTool, type ToolDefinition, type ToolContext, type ResolvedSettings } from "@cowork/core";
 
 export interface ReActConfig {
   settings: ResolvedSettings;
@@ -141,8 +141,8 @@ export class ReActLoop {
               requestApproval: async () => false,
               tools: this.config.tools,
             };
-            const result = await tool.execute(step.actionInput ?? {}, ctx);
-            observation = result.content.slice(0, 2000);
+            const outcome = await executeTool(tool, step.actionInput ?? {}, ctx);
+            observation = outcome.result.content.slice(0, 2000);
           } catch (err) {
             observation = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }

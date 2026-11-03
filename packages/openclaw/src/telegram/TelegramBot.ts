@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { InboundMessage, MessageHandler } from "../gateway/types.js";
 import { RateLimiter } from "../gateway/RateLimiter.js";
+import { guardedFetch } from "@cowork/security/network";
 
 interface TelegramUpdate {
   update_id: number;
@@ -59,11 +60,11 @@ export class TelegramBot {
     const chunks = this.chunkMessage(text, 4096);
     for (const chunk of chunks) {
       try {
-        await fetch(`${this.apiBase}/sendMessage`, {
+        await guardedFetch(`${this.apiBase}/sendMessage`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chat_id: chatId, text: chunk, parse_mode: "Markdown" }),
-        });
+        }, { context: "TelegramBot/sendMessage" });
       } catch {
         // ignore send failures — non-critical
       }
@@ -72,8 +73,10 @@ export class TelegramBot {
 
   private async poll(): Promise<void> {
     try {
-      const resp = await fetch(
-        `${this.apiBase}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=1`
+      const resp = await guardedFetch(
+        `${this.apiBase}/getUpdates?offset=${this.lastUpdateId + 1}&timeout=1`,
+        {},
+        { context: "TelegramBot/poll" },
       );
       if (!resp.ok) return;
 

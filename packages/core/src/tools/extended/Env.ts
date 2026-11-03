@@ -19,7 +19,9 @@ export const EnvRead: ToolDefinition = {
       if (value === undefined) return { content: `${input.name}=`, isError: false };
       return { content: displayEnvValue(input.name, value), isError: false };
     }
-    const safe = filterEnv(process.env);
+    // Display only: values are redacted by displayEnvValue, and no child
+    // process ever receives this copy.
+    const safe = filterEnv(process.env, { mode: "denylist" });
     const text = Object.keys(safe)
       .sort()
       .map((k) => displayEnvValue(k, safe[k]))

@@ -64,8 +64,11 @@ export const BashTool: ToolDefinition<BashInput> = {
     if (mode !== "none" && mode !== "docker" && mode !== "podman") {
       return err(`Unknown sandboxMode "${String(mode)}"; refusing to run unsandboxed`);
     }
-    // Credentials never reach child processes.
+    // Credentials never reach child processes (strict allowlist).
     const env = filterEnv(process.env);
+    // Container image is configurable so operators can pin by digest; the
+    // default is a stable release tag rather than a mutable `latest`.
+    const image = process.env.COWORK_BASH_IMAGE ?? "ubuntu:24.04";
 
     return await new Promise<ToolResult>((resolvePromise) => {
       const isContainer = mode !== "none";
@@ -82,14 +85,16 @@ export const BashTool: ToolDefinition<BashInput> = {
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
             "-v", `${cwd}:/workspace:rw`,
             "-w", "/workspace",
-            "ubuntu:latest",
+            image,
             "/bin/bash", "-c", input.command,
           ]
         : ["-c", input.command];
 
       const child = spawn(bin, args, {
         cwd: isContainer ? undefined : cwd,
-        env: isContainer ? undefined : env,
+        // Always pass an explicit env: `undefined` means Node/Bun inherits
+        // the full parent process.env, including every credential.
+        env,
         detached: true,
       });
 

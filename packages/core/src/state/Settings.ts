@@ -62,6 +62,12 @@ const SANDBOX_MODES: readonly SandboxMode[] = ["none", "docker", "podman"];
 const PROJECT_UNTRUSTED_KEYS = [
   "apiKey", "baseUrl", "embedderApiKey", "embedderUrl",
   "mcpServers", "permissionMode", "sandboxMode", "sandboxAllowlist", "sandboxEnabled",
+  // A cloned repository must not choose which host receives the user's key,
+  // which model is billed, how long the loop runs, or which extra tool
+  // surfaces (Graphify / Wiki / project context) become available.
+  "provider", "model", "maxTurns", "maxTokens", "contextWindow",
+  "systemPrompt", "loadProjectContext", "enableGraphify", "enableWiki",
+  "persistTranscripts",
 ] as const;
 
 const DEFAULTS: Settings = {
@@ -76,7 +82,9 @@ const DEFAULTS: Settings = {
   enableGraphify: false,
   enableWiki: true,
   sandboxMode: "none",
-  sandboxEnabled: false,
+  // Allowlist enforcement is on by default; opt out explicitly with
+  // COWORK_SANDBOX_ENABLED=false. Private/special-use IPs are always blocked.
+  sandboxEnabled: true,
   sandboxAllowlist: [],
 };
 
@@ -91,6 +99,14 @@ const DEFAULTS: Settings = {
 export function getCoworkHome(): string {
   if (process.env.COWORK_HOME) return process.env.COWORK_HOME;
   return join(homedir(), ".cowork");
+}
+
+function clampSetting(value: number, lo: number, hi: number, field: string): number {
+  if (value > hi) {
+    console.warn(`[settings] clamping ${field} from ${value} to ${hi}`);
+    return hi;
+  }
+  return Math.max(lo, value);
 }
 
 function parsePositiveInt(value: unknown, field: string): number | undefined {
@@ -111,9 +127,9 @@ export function validateSettings(merged: Settings): Settings {
   if (merged.sandboxMode && !SANDBOX_MODES.includes(merged.sandboxMode)) {
     throw new Error(`Invalid sandboxMode "${merged.sandboxMode}". Expected one of: ${SANDBOX_MODES.join(", ")}`);
   }
-  merged.maxTurns = parsePositiveInt(merged.maxTurns, "maxTurns") ?? DEFAULTS.maxTurns;
-  merged.maxTokens = parsePositiveInt(merged.maxTokens, "maxTokens") ?? DEFAULTS.maxTokens;
-  merged.contextWindow = parsePositiveInt(merged.contextWindow, "contextWindow") ?? DEFAULTS.contextWindow;
+  merged.maxTurns = clampSetting(parsePositiveInt(merged.maxTurns, "maxTurns") ?? DEFAULTS.maxTurns, 1, 100, "maxTurns");
+  merged.maxTokens = clampSetting(parsePositiveInt(merged.maxTokens, "maxTokens") ?? DEFAULTS.maxTokens, 1, 32_000, "maxTokens");
+  merged.contextWindow = clampSetting(parsePositiveInt(merged.contextWindow, "contextWindow") ?? DEFAULTS.contextWindow, 1, 1_000_000, "contextWindow");
   if (!Array.isArray(merged.sandboxAllowlist)) merged.sandboxAllowlist = [];
   if (merged.baseUrl) {
     let parsed: URL;

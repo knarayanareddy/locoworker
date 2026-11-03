@@ -9,6 +9,8 @@
  * `assertDnsAllowed` adds a resolved-IP recheck for hostnames (DNS rebinding
  * defence) and is called by HttpFetch immediately before the request.
  */
+export type PinnedAddress = { address: string; family: number };
+
 export interface SandboxConfig {
   enabled: boolean;
   allowlist: string[];
@@ -68,6 +70,7 @@ export function isBlockedIpv4(ip: string): boolean {
     (a === 198 && b === 51 && ((n >>> 8) & 0xff) === 100) || // documentation
     (a === 203 && b === 0 && ((n >>> 8) & 0xff) === 113) ||   // documentation
     (a === 192 && b === 0 && ((n >>> 8) & 0xff) === 2) ||     // documentation
+    (a === 192 && b === 88 && ((n >>> 8) & 0xff) === 99) ||   // 6to4 relay anycast
     a >= 224                                    // multicast + reserved
   );
 }
@@ -100,25 +103,48 @@ function expandIpv6(host: string): number[] | null {
   return out;
 }
 
+/** All IANA special-use IPv6 ranges an outbound request must never reach. */
 export function isBlockedIpv6(host: string): boolean {
   const groups = expandIpv6(host);
   if (!groups) return true; // fail closed on anything we cannot parse
-  const [a, b] = groups;
-  // ::ffff:0:0/96 IPv4-mapped: classify the embedded IPv4 with the IPv4 rules.
-  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
-    const n = ((groups[6] << 16) | groups[7]) >>> 0;
-    const ip = `${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`;
-    return isBlockedIpv4(ip);
-  }
-  // :: (unspecified) and ::1 (loopback)
-  if (groups.every((g) => g === 0)) return true;
-  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true;
-  // fc00::/7 unique local, fe80::/10 link-local
+  const [a, b, c, d, e, f, g, h] = groups;
+  const first4Zero = a === 0 && b === 0 && c === 0 && d === 0;
+  const first5Zero = first4Zero && e === 0;
+  const first6Zero = first5Zero && f === 0;
+
+  const embeddedIpv4 = (): boolean => {
+    const n = (((g & 0xffff) << 16) | (h & 0xffff)) >>> 0;
+    return isBlockedIpv4(`${(n >>> 24) & 255}.${(n >>> 16) & 255}.${(n >>> 8) & 255}.${n & 255}`);
+  };
+
+  // :: (unspecified), ::1 (loopback)
+  if (groups.every((x) => x === 0)) return true;
+  if (first6Zero && g === 0 && h === 1) return true;
+  // ::ffff:0:0/96 IPv4-mapped and ::ffff:0:0:0/96 IPv4-translated
+  if (first5Zero && f === 0xffff) return embeddedIpv4();
+  if (first4Zero && e === 0xffff && f === 0) return embeddedIpv4();
+  // ::a.b.c.d (deprecated IPv4-compatible) — classify the embedded IPv4
+  if (first6Zero && (g !== 0 || h !== 1)) return embeddedIpv4();
+  // 64:ff9b::/96 well-known NAT64 prefix
+  if (a === 0x0064 && b === 0xff9b && c === 0 && d === 0 && e === 0) return embeddedIpv4();
+  // 64:ff9b:1::/48 local-use NAT64 (always non-global)
+  if (a === 0x0064 && b === 0xff9b && c === 0x0001) return true;
+  // 2002::/16 6to4 (deprecated; embeds an arbitrary IPv4 in b:c)
+  if (a === 0x2002) return true;
+  // 2001::/32 Teredo, 2001:2::/48 benchmarking, 2001:10::/28 + 2001:20::/28
+  // ORCHID/ORCHIDv2, 2001:db8::/32 documentation
+  if (a === 0x2001 && (b === 0x0000 || b === 0x0002 || b === 0x0db8 ||
+      (b >= 0x0010 && b <= 0x002f))) return true;
+  // 100::/64 discard-only
+  if (a === 0x0100 && b === 0 && c === 0 && d === 0) return true;
+  // 3fff::/20 documentation (RFC 9637)
+  if (a === 0x3fff && b < 0x1000) return true;
+  // fc00::/7 unique local, fec0::/10 site-local, fe80::/10 link-local,
+  // ff00::/8 multicast
   if ((a & 0xfe00) === 0xfc00) return true;
+  if ((a & 0xffc0) === 0xfec0) return true;
   if ((a & 0xffc0) === 0xfe80) return true;
-  // ff00::/8 multicast, 2001:db8::/32 documentation
   if ((a & 0xff00) === 0xff00) return true;
-  if (a === 0x2001 && b === 0xdb8) return true;
   return false;
 }
 
@@ -160,9 +186,15 @@ export class NetworkSandbox {
     );
   }
 
+  /** Default policy used by every guarded fetch. Allowlist enforcement is on
+   *  by default; COWORK_SANDBOX_ENABLED=false is an explicit opt-out. */
+  static default(env: NodeJS.ProcessEnv = process.env): NetworkSandbox {
+    return NetworkSandbox.fromEnv(env);
+  }
+
   static fromEnv(env: NodeJS.ProcessEnv = process.env): NetworkSandbox {
     return new NetworkSandbox({
-      enabled: env.COWORK_SANDBOX_ENABLED === "true",
+      enabled: env.COWORK_SANDBOX_ENABLED !== "false",
       allowlist: (env.COWORK_SANDBOX_ALLOWLIST ?? "")
         .split(",")
         .map((s) => s.trim())
@@ -197,25 +229,35 @@ export class NetworkSandbox {
   }
 
   /**
-   * Re-check the DNS answer right before the request. This does not fully
-   * eliminate DNS rebinding (a resolver can change its answer between the
-   * lookup and connect), but it closes the trivial `public-host -> 127.0.0.1`
-   * case. Fails closed on lookup errors.
+   * Resolve a URL to concrete IP addresses, validate **every** answer and
+   * return them so the caller can pin the connection (no second DNS lookup).
+   * This closes the DNS-rebinding TOCTOU gap: `fetch()` re-resolves on its
+   * own, so a plain pre-flight lookup is not sufficient. Fails closed.
    */
-  async assertDnsAllowed(url: string, context = "fetch"): Promise<void> {
+  async resolvePinnedAddresses(url: string, context = "fetch"): Promise<PinnedAddress[]> {
     this.assertAllowed(url, context);
     const host = normalizeHost(new URL(url).hostname);
-    if (host.includes(":") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host)) return;
+    if (host.includes(":")) return [{ address: host, family: 6 }];
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return [{ address: host, family: 4 }];
     try {
       const { lookup } = await import("node:dns/promises");
       const answers = await lookup(host, { all: true, verbatim: true });
-      if (!answers.length || answers.some((a) => isBlockedIp(a.address))) {
+      if (!answers.length) {
+        throw new Error(`[security] ${context}: "${host}" did not resolve`);
+      }
+      if (this.blockPrivateHosts && answers.some((a) => isBlockedIp(a.address))) {
         throw new Error(`[security] ${context}: "${host}" resolves to a blocked address`);
       }
+      return answers.map((a) => ({ address: a.address, family: a.family }));
     } catch (e) {
       if (e instanceof Error && e.message.startsWith("[security]")) throw e;
       throw new Error(`[security] ${context}: DNS resolution failed for "${host}"`);
     }
+  }
+
+  /** Re-check DNS before the request (fails closed on lookup errors). */
+  async assertDnsAllowed(url: string, context = "fetch"): Promise<void> {
+    await this.resolvePinnedAddresses(url, context);
   }
 
   /** Backwards-compatible alias, now enforcing rather than just warning. */

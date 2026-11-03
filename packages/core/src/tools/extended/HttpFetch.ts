@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 import { NetworkSandbox } from "@cowork/security/sandbox";
+import { guardedFetch } from "@cowork/security/network";
 
 const MAX_RESPONSE_CHARS = 50_000;
 const SAFE_METHODS = new Set(["GET", "HEAD"]);
@@ -29,28 +30,25 @@ export const HttpFetch: ToolDefinition = {
       return { content: `Unsafe HTTP method "${method}" is not permitted`, isError: true };
     }
 
-    const sandbox = new NetworkSandbox({
-      enabled: ctx.settings?.sandboxEnabled ?? process.env.COWORK_SANDBOX_ENABLED === "true",
-      allowlist: ctx.settings?.sandboxAllowlist ??
-        (process.env.COWORK_SANDBOX_ALLOWLIST ?? "").split(",").map((s) => s.trim()).filter(Boolean),
-    });
+    const sandbox = ctx.settings
+      ? new NetworkSandbox({
+          enabled: ctx.settings.sandboxEnabled ?? true,
+          allowlist: ctx.settings.sandboxAllowlist ?? [],
+        })
+      : NetworkSandbox.default();
     try {
-      sandbox.assertAllowed(input.url, "HttpFetch");
-      // Re-resolve the hostname so a public name that answers with a loopback
-      // address (DNS rebinding) is rejected before the socket is opened.
-      await sandbox.assertDnsAllowed(input.url, "HttpFetch");
-    } catch (e) {
-      return { content: (e as Error).message, isError: true };
-    }
-
-    try {
-      const res = await fetch(input.url, {
-        method,
-        headers: input.headers,
-        // Never follow redirects: an allowlisted host could redirect to a
-        // private address and bypass the check.
-        redirect: "manual",
-      });
+      // guardedFetch re-validates the URL, pins the DNS answer and never
+      // follows redirects implicitly. The Host header is always derived from
+      // the validated URL, so a supplied "Host" cannot redirect the request.
+      const res = await guardedFetch(
+        input.url,
+        { method, headers: input.headers, redirect: "manual" },
+        {
+          sandbox,
+          context: "HttpFetch",
+          maxResponseBytes: MAX_RESPONSE_CHARS * 4,
+        },
+      );
       if (res.status >= 300 && res.status < 400) {
         return { content: `Redirect (${res.status}) blocked by network sandbox`, isError: true };
       }

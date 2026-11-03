@@ -6,7 +6,7 @@
 
 import type { StreamingProvider } from "./types";
 import type { ToolDefinition, ToolContext, AgentEvent } from "../index";
-import { PermissionGate } from "../permissions/PermissionGate.js";
+import { executeTool } from "../tools/executeTool.js";
 import { PermissionLevel } from "../permissions/PermissionLevel.js";
 
 export type StreamingAgentEvent =
@@ -150,66 +150,48 @@ export async function* streamingQueryLoop(
         permissionLevel: sessionLevel,
       };
 
-      // Permission check
-      const perm = PermissionGate.check(tool, ctx);
-      if (perm.allowed === false) {
-        yield {
-          type: "permission_denied",
-          tool: tb.name,
-          reason: perm.reason,
-        };
+      // Shared choke point validates the schema, checks the permission level
+      // and handles approval before `tool.execute` is ever reached.
+      const outcome = await executeTool(tool, input, ctx, {
+        approve: config.approvalHandler
+          ? (name, toolInput) => config.approvalHandler!(name, toolInput)
+          : undefined,
+      });
+      for (const decision of outcome.events) {
+        if (decision.type === "permission_request") {
+          yield { type: "permission_request", tool: decision.tool, input: decision.input };
+        } else if (decision.type === "permission_denied") {
+          yield { type: "permission_denied", tool: decision.tool, reason: decision.reason };
+        }
+      }
+      if (
+        outcome.stage === "invalid_input" ||
+        outcome.stage === "permission_denied" ||
+        outcome.stage === "approval_denied"
+      ) {
         toolResultContent.push({
           type: "tool_result",
           tool_use_id: tb.id,
-          content: `Permission denied: ${perm.reason}`,
+          content: outcome.result.content,
           is_error: true,
         });
         continue;
       }
 
-      // Approval
-      if (perm.allowed === "needs_approval" && config.approvalHandler) {
-        yield {
-          type: "permission_request",
-          tool: tb.name,
-          input,
-        };
-        const approved = await config.approvalHandler(tb.name, input);
-        if (!approved) {
-          toolResultContent.push({
-            type: "tool_result",
-            tool_use_id: tb.id,
-            content: "User denied approval",
-            is_error: true,
-          });
-          continue;
-        }
-      }
-
-      try {
-        const result = await tool.execute(input, ctx);
-        yield {
-          type: "tool_result",
-          id: tb.id,
-          name: tb.name,
-          result: result.content,
-          isError: result.isError,
-        };
-        toolResultContent.push({
-          type: "tool_result",
-          tool_use_id: tb.id,
-          content: result.content,
-          is_error: result.isError,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        toolResultContent.push({
-          type: "tool_result",
-          tool_use_id: tb.id,
-          content: `Tool error: ${msg}`,
-          is_error: true,
-        });
-      }
+      const result = outcome.result;
+      yield {
+        type: "tool_result",
+        id: tb.id,
+        name: tb.name,
+        result: result.content,
+        isError: result.isError,
+      };
+      toolResultContent.push({
+        type: "tool_result",
+        tool_use_id: tb.id,
+        content: result.content,
+        is_error: result.isError,
+      });
     }
 
     history.push({ role: "user", content: toolResultContent });

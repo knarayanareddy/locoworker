@@ -63,7 +63,16 @@ export class DashboardRouter {
         if (url.pathname === "/health") return Response.json({ ok: true });
         if (url.pathname === "/" || url.pathname === "/index.html") {
           return new Response(renderDashboardHTML(), {
-            headers: { "Content-Type": "text/html; charset=utf-8" },
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Content-Security-Policy":
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+                "connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+              "X-Content-Type-Options": "nosniff",
+              "Referrer-Policy": "no-referrer",
+              "X-Frame-Options": "DENY",
+              "Cache-Control": "no-store",
+            },
           });
         }
         if (!url.pathname.startsWith("/api/")) return Response.json({ error: "Not found" }, { status: 404 });
@@ -72,7 +81,9 @@ export class DashboardRouter {
         try {
           return await self.route(req, url);
         } catch (e) {
-          return Response.json({ error: e instanceof Error ? e.message : String(e) }, { status: 500 });
+          // Never echo internal exception text (paths, credentials) to clients.
+          process.stderr.write(`[Dashboard] request failed: ${String(e)}\n`);
+          return Response.json({ error: "Internal server error" }, { status: 500 });
         }
       },
     });
