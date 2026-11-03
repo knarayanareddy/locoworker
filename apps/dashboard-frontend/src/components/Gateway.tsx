@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { MessageSquare, Send, CheckCircle, XCircle, Zap, RefreshCw } from 'lucide-react';
+import { Send, CheckCircle, Zap, RefreshCw } from 'lucide-react';
 import { GATEWAY_CHANNELS } from '../data/mockData';
 
 const COMPOSIO_APPS = [

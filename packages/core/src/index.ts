@@ -2,12 +2,15 @@ export * from "./Tool.js";
 export * from "./types.js";
 export * from "./queryLoop.js";
 export * from "./permissions/index.js";
+export * from "./policy/index.js";
+export { TranscriptLog } from "./memdir/Transcript.js";
 export * from "./providers/index.js";
 export { QueryEngine } from "./QueryEngine.js";
 export { ContextCompressor } from "./services/compact/ContextCompressor.js";
 export * from "./state/Settings.js";
 export * from "./state/SystemContext.js";
 export * from "./memdir/MemorySystem.js";
+export * from "./memdir/MemoryTypes.js";
 export * from "./tools/index.js";
 export * from "./commands/index.js";
 

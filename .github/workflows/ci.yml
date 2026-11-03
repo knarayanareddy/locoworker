@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # bun.lock is the text lockfile (Bun >= 1.2); 1.1.x only reads bun.lockb.
+          bun-version: "1.4.4"
+
+      - name: Install dependencies
+        # --ignore-scripts avoids Electron's binary download: this workflow
+        # only typechecks the desktop sources, it does not package them.
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Typecheck (all workspaces, frontend, desktop)
+        run: bun run typecheck
+
+      - name: Tests
+        run: bun test
+
+      - name: Graphify builder smoke test
+        run: bun run build:graph
+
+      - name: CLI smoke test
+        run: bun run cowork --help

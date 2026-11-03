@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { guardPath } from "../files/pathGuard.js";
 import {
   KnowledgeGraphBuilder,
   GraphStorage,
@@ -32,25 +32,20 @@ export function makeGraphifyBuildTool(session: GraphifySession): ToolDefinition<
     },
 
     async execute(input, ctx: ExecutionContext): Promise<ToolResult> {
-      const root = resolve(ctx.workingDirectory, input.path ?? ".");
-      const outDir = resolve(root, input.output ?? "graphify-out");
+      const guardedRoot = await guardPath(ctx.workingDirectory, input.path ?? ".");
+      if (guardedRoot.error) return err(guardedRoot.error);
+      const root = guardedRoot.path!;
+      const guardedOut = await guardPath(root, input.output ?? "graphify-out");
+      if (guardedOut.error) return err(guardedOut.error);
+      const outDir = guardedOut.path!;
       try {
         const builder = new KnowledgeGraphBuilder();
         const result = await builder.build({ rootDir: root });
         const { graph } = result;
 
-        // Save to storage
+        // Save the snapshot produced by the builder (its metadata is portable).
         const storage = new GraphStorage(outDir);
-        const snapshot = graph.toSnapshot({
-          builtAt: new Date().toISOString(),
-          rootDir: root,
-          fileCount: result.filesProcessed,
-          nodeCount: result.nodesCreated,
-          edgeCount: result.edgesCreated,
-          languages: [],
-          totalSourceBytes: 0,
-        });
-        await storage.save(snapshot);
+        await storage.save(result.snapshot);
 
         const reportContent = buildGraphReport(result, root);
         await storage.writeReport(reportContent);
@@ -62,7 +57,7 @@ export function makeGraphifyBuildTool(session: GraphifySession): ToolDefinition<
             `Built graph: ${result.nodesCreated} nodes, ${result.edgesCreated} edges, ${result.filesProcessed} files.`,
             `Output: ${outDir}/graph.json + ${outDir}/GRAPH_REPORT.md`,
             "",
-            `Next: read GRAPH_REPORT.md before navigating, then use GraphifyQuery for symbol/path lookups.`,
+            `Next: read graphify-out/GRAPH_REPORT.md before navigating, then use GraphifyQuery for symbol/path lookups.`,
           ].join("\n"),
         );
       } catch (e) {

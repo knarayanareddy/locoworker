@@ -1,5 +1,5 @@
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 
 export interface CouncilMember {
   name: string;
@@ -56,7 +56,8 @@ export class CouncilDebate {
   constructor(
     private engine: QueryEngine,
     private tools: ToolDefinition[],
-    private members: CouncilMember[] = DEFAULT_MEMBERS
+    private members: CouncilMember[] = DEFAULT_MEMBERS,
+    private policy?: AgentPolicy
   ) {}
 
   async debate(
@@ -109,8 +110,9 @@ export class CouncilDebate {
             tools: [],
             maxTurns: 1,
             maxTokens: opts?.maxTokensPerTurn ?? 600,
+            policy: this.policy,
           })) {
-            if (event.type === "text") argument += event.text;
+            if (event.type === "complete") argument = event.text;
             if (event.type === "complete") {
               inputTokens = event.usage?.inputTokens ?? 0;
               outputTokens = event.usage?.outputTokens ?? 0;
@@ -188,8 +190,9 @@ export class CouncilDebate {
         tools: [],
         maxTurns: 1,
         maxTokens: 800,
+        policy: this.policy,
       })) {
-        if (event.type === "text") text += event.text;
+        if (event.type === "complete") text = event.text;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;
           outputTokens = event.usage?.outputTokens ?? 0;

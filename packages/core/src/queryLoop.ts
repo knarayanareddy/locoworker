@@ -1,7 +1,8 @@
 // packages/core/src/queryLoop.ts
-// The agent loop — patched for Phase 5:
-//   1) finalText accumulates across ALL turns (not reset per tool call)
-//   2) HookRegistry integration (pre-tool, post-tool, on-turn, on-complete, on-event)
+// The agent loop.
+//   - Only the final assistant turn is returned as the answer (`complete.text`).
+//   - HookRegistry integration (pre-tool, post-tool, on-turn, on-complete, on-event).
+//   - A shared AgentPolicy can be inherited by nested agent loops.
 
 import type { Message, AgentEvent } from "./types.js";
 import type { QueryEngine } from "./QueryEngine.js";
@@ -12,6 +13,8 @@ import type { ContextCompressor } from "./services/compact/ContextCompressor.js"
 import type { HookRegistry } from "./hooks/HookRegistry.js";
 
 import type { ResolvedSettings } from "./state/Settings.js";
+import type { AgentPolicy, ApprovalFn } from "./policy/AgentPolicy.js";
+import { applyAgentPolicy, getDefaultAgentPolicy } from "./policy/AgentPolicy.js";
 
 export interface QueryLoopConfig {
   engine: QueryEngine;
@@ -20,7 +23,7 @@ export interface QueryLoopConfig {
   maxTurns?: number;
   maxTokens?: number;
   permissionLevel?: PermissionLevel;
-  requestApproval?: (toolName: string, input: unknown) => Promise<boolean>;
+  requestApproval?: ApprovalFn;
   abortSignal?: AbortSignal;
   compressor?: ContextCompressor;
   hooks?: HookRegistry;
@@ -29,6 +32,8 @@ export interface QueryLoopConfig {
   settings?: ResolvedSettings;
   /** Optional initial history to resume a session */
   history?: Message[];
+  /** Shared policy inherited by nested agent loops. */
+  policy?: AgentPolicy;
 }
 
 function estimateTokens(messages: Message[]): number {
@@ -51,6 +56,9 @@ export async function* queryLoop(
   userInput: string,
   config: QueryLoopConfig
 ): AsyncGenerator<AgentEvent> {
+  const policy = config.policy ?? getDefaultAgentPolicy();
+  // Inherit policy only for fields the caller did not set explicitly.
+  const merged = applyAgentPolicy(config, policy);
   const {
     engine,
     systemPrompt,
@@ -62,18 +70,27 @@ export async function* queryLoop(
     abortSignal,
     compressor,
     hooks,
-  } = config;
+  } = merged;
+  const settings = merged.settings;
+  const workingDirectory = merged.workingDirectory ?? process.cwd();
+  const sessionId = merged.sessionId;
 
+  // When history is supplied it is authoritative: the caller is responsible
+  // for appending the current user message. userInput is only used for a
+  // fresh conversation.
   const history: Message[] = config.history ? [...config.history] : [{ role: "user", content: userInput }];
 
   let totalInputTokens = 0;
   let totalOutputTokens = 0;
-  // ── PHASE 5 FIX: finalText accumulates across all turns ─────────────────
+  // Only the final assistant turn (the one without tool_use) is the answer.
+  // Intermediate commentary must not leak into transcripts, session summaries
+  // or gateway replies.
   let finalText = "";
+  let turnText = "";
 
   const hookCtx = {
-    sessionId: config.sessionId ?? "unknown",
-    workingDirectory: config.workingDirectory ?? process.cwd(),
+    sessionId: sessionId ?? "unknown",
+    workingDirectory,
     turnIndex: 0,
     finalText,
     totalInputTokens,
@@ -83,6 +100,7 @@ export async function* queryLoop(
   for (let turn = 0; turn < maxTurns; turn++) {
     if (abortSignal?.aborted) break;
 
+    turnText = "";
     const estimatedTokens = estimateTokens(history);
 
     hookCtx.turnIndex = turn;
@@ -139,7 +157,7 @@ export async function* queryLoop(
 
     for (const block of assistantBlocks) {
       if (block.type === "text") {
-        finalText += block.text; // accumulate, never reset
+        turnText += block.text;
         const ev: AgentEvent = { type: "text", text: block.text };
         if (hooks) await hooks.runOnEvent(ev, hookCtx);
         yield ev;
@@ -153,6 +171,7 @@ export async function* queryLoop(
     history.push({ role: "assistant", content: assistantBlocks });
 
     if (modelResponse.stopReason !== "tool_use") {
+      finalText = turnText;
       hookCtx.finalText = finalText;
       hookCtx.totalInputTokens = totalInputTokens;
       hookCtx.totalOutputTokens = totalOutputTokens;
@@ -182,11 +201,11 @@ export async function* queryLoop(
       }
 
       const execCtx: ExecutionContext = {
-        workingDirectory: config.workingDirectory ?? process.cwd(),
+        workingDirectory,
         permissionLevel,
         abortSignal,
-        settings: config.settings,
-        sessionId: config.sessionId,
+        settings,
+        sessionId,
       };
 
       const checkResult = PermissionGate.check(tool, execCtx);
@@ -245,6 +264,7 @@ export async function* queryLoop(
     history.push({ role: "user", content: toolResultBlocks });
   }
 
+  if (!finalText) finalText = turnText; // loop ended on max-turns without a final turn
   hookCtx.finalText = finalText;
   hookCtx.totalInputTokens = totalInputTokens;
   hookCtx.totalOutputTokens = totalOutputTokens;

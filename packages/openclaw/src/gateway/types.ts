@@ -1,4 +1,4 @@
-export type MessageChannel = "telegram" | "http" | "websocket";
+export type MessageChannel = "telegram" | "http" | "webhook" | "websocket";
 export type MessageStatus = "queued" | "processing" | "complete" | "error";
 
 export interface InboundMessage {
@@ -23,7 +23,13 @@ export interface OutboundMessage {
 export interface GatewayConfig {
   port: number;
   rateLimitPerMinute: number;
+  /** Bearer token. Required when binding a non-loopback host. */
   authToken?: string;
+  tokenEnvVar?: string;
+  hostname?: string;
+  /** HMAC secret for POST /webhook (X-Cowork-Signature: sha256=<hex>). */
+  webhookSecret?: string;
+  /** If set, only these sender IDs may send messages. */
   allowedSenders?: string[];
 }
 

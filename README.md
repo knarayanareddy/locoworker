@@ -1,93 +1,112 @@
-# Locoworker - The Ultimate Agentic Workspace
+# locoworker
 
-> BYOK + local-LLM agentic coding workspace and simulation environment.
+A Bun + TypeScript monorepo for a **BYOK, local-LLM agentic coding workspace**:
+an agent loop with file/shell tools, persistent memory, a code knowledge graph,
+MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 
-The ultimate agentic workspace vision from the `completeproject.md` specification has been **100% realized**. This repository is a massive 21-package monorepo encompassing every single layer: a core agent loop, multi-model BYOK routing, compounding knowledge graphs, multi-agent orchestration, swarm simulation, background daemons, secure messaging gateways, and an interactive desktop UI.
+> **Status:** this is an actively developed research codebase, not a finished
+> product. Earlier versions of this README claimed "100% realized" features,
+> tree-sitter parsing, a 71× token reduction, isolated containers by default,
+> and working TOTP-protected Discord/Telegram gateways. Those claims were not
+> accurate. The matrix below describes what actually exists today.
 
-## Fully Implemented Architecture
+## Feature status
 
-All 6 core phases and all "High-Horizon" features have been successfully built and integrated.
+| Area | Status | Notes |
+|------|--------|-------|
+| Agent loop, tools, compression | ✅ working | `packages/core/src/queryLoop.ts`; 6 permission levels; approvals required for Bash and writes at elevated levels |
+| BYOK providers | ✅ working | Anthropic, OpenAI, Ollama, LM Studio, DeepSeek, OpenRouter (`packages/core/src/providers`) |
+| Persistent memory + transcripts | ✅ working | `~/.cowork/projects/<name>/`; `--resume` restores chat history |
+| Graphify knowledge graph | ✅ working | **Regex/heuristic extractors**, not tree-sitter; `bun run build:graph` writes `graphify-out/graph.json` |
+| Wiki, AutoDream, Kairos scheduler | ✅ working | Filesystem-backed; daemon is opt-in via `COWORK_KAIROS_ENABLED` |
+| Hermes MCP server | ✅ working | stdio + SSE; Bearer token, loopback bind, tool allowlist, permission gate |
+| OpenClaw gateway | ✅ working | HTTP + Telegram polling; Bearer token + HMAC webhooks. **Discord is not implemented** |
+| Dashboard (built-in UI) | ✅ working | `apps/dashboard`, token-protected, real memory/audit/wiki/session data |
+| Dashboard (React/Vite UI) | ⚠️ experimental | `apps/dashboard-frontend`; some panels still use fixture data; proxies `/api` to the local dashboard |
+| Orchestrator, council, research, simulation | ✅ working | Nested agents inherit the caller's permission policy |
+| Eval harness | ✅ working | `bun run eval` uses built-in suites; `bun run eval:custom` needs `.cowork/evals/*.eval.json` |
+| Tests & CI | ✅ working | `bun test` (60 tests) and `.github/workflows/ci.yml` |
+| Container isolation | ⚠️ opt-in | `COWORK_SANDBOX_MODE=docker|podman` requires a local container runtime; default is unsandboxed |
+| Network sandbox | ✅ working | Allowlist + private-address blocking for `HttpFetch`; child processes never receive credentials |
+| Electron desktop / plugins / voice / marketplace | ⚠️ experimental or stubs | `packages/plugins` is a typed stub; voice needs external API keys |
+| tree-sitter AST parsing, Tauri shell, TOTP gateway auth | ❌ not present | TOTP exists only as an RFC 6238 utility; gateways use Bearer tokens + HMAC |
 
-### Phase 1 — Core Agent & Memory
-- **Agent Loop** (`packages/core`): The `queryLoop` engine supports reading, writing, editing, globbing, grepping, and securely executing Bash commands.
-- **BYOK Provider Routing**: Hot-swap between Anthropic, OpenAI, Ollama, LM Studio, DeepSeek, and OpenRouter seamlessly.
-- **Persistent Memory** (`packages/memory-v2`, `packages/hermes`): A robust, 7-day memory persistence layer with `MEMORY.md` summarization and context compression (`MicroCompact` & `AutoCompact`).
+## Requirements
 
-### Phase 2 — Compounding Knowledge Layer
-- **Graphify** (`packages/graphify`): Tree-sitter AST extraction that builds queryable knowledge graphs from your codebase, driving a 71x token reduction by navigating via structure instead of raw text search.
-- **LLMWiki** (`packages/wiki`): A compounding wiki pattern where documents are compiled by the LLM into structured, cross-referenced Markdown files.
+- **Bun ≥ 1.1** (CI uses Bun 1.1); `ripgrep` recommended for the `Grep` tool.
+- An API key for your chosen provider, or a local Ollama/LM Studio endpoint.
+- Optional: Docker or Podman for `COWORK_SANDBOX_MODE`.
 
-### Phase 3 — Agent Enhancement & Background Operations
-- **KAIROS Daemon** (`packages/kairos`): A background daemon handling cron tasks.
-  - *AutoDream*: Automatically sweeps up raw session transcripts and consolidates them into the LLMWiki without manual intervention.
-- **AutoResearch** (`packages/research`): Autonomous loops capable of executing independent ML and engineering experiments.
-
-### Phase 4 — OpenClaw Gateway (Messaging & Automation)
-- **OpenClaw** (`packages/openclaw`): A secure gateway integrating the agent directly into Discord and Telegram.
-- **TOTP 2FA Hardening** (`packages/security`): Gateway remote access is shielded by an HMAC-SHA1 Time-Based One-Time Password prompt.
-
-### Phase 5 — MiroFish Simulation Studio
-- **MiroFish Scenario Forecasting** (`packages/mirofish`): Test the downstream impact of your codebase changes or strategic plans by spawning a multi-agent swarm using the `/forecast` command to simulate side-effects and dependency breaks.
-
-### Phase 6 — High-Horizon Orchestration & Sandboxing
-- **UltraPlan** (`packages/orchestrator`): Provide complex, high-level goals via `/ultraplan`. The `OrchestratorEngine` decomposes the goal into a parallel task graph and spawns distinct AI workers to complete them collaboratively.
-- **Dashboard UI & Gantt Views** (`apps/dashboard`): A full web dashboard for visualizing UltraPlan task execution in real-time.
-- **Virtual Terminal Pets (BuddyWidget)**: A companion widget in the dashboard tracks your agent's health, current token expenditure, and mood dynamically.
-- **Granular Security Sandboxing** (`packages/security`): Toggle `sandboxMode: "docker"` in your settings to execute all `BashTool` commands inside isolated, ephemeral containers.
-
-## Getting Started
-
-Requires **Bun ≥ 1.1**. Optional but recommended: **ripgrep** for the `Grep` tool.
-Ensure you have Docker installed if you plan on using `sandboxMode: "docker"`.
+## Quickstart
 
 ```bash
-# Install dependencies across all 21 workspaces
-bun install
-
-# Verify the build
-bun run typecheck
-bun test
-bun run eval
+bun install --ignore-scripts       # --ignore-scripts skips Electron's binary download
+cp .env.example .env               # fill in one provider key
+bun run typecheck                  # tsc -b + frontend + desktop
+bun test                           # unit/integration tests
+bun run cowork                     # interactive REPL
+bun run cowork "explain src/queryLoop.ts"
+bun run cowork --resume <session-id> "continue"
+bun run cowork --help
 ```
 
-## Running the Workspace
+Other useful commands:
 
-### One-Shot Complex Execution (UltraPlan)
 ```bash
-# Decompose a massive task into parallel agents
-bun run cowork "/ultraplan build a snake game in Python"
+bun run build:graph        # regenerate the knowledge graph + report
+bun run dashboard          # local dashboard at http://127.0.0.1:3720
+bun run hermes:stdio       # Hermes MCP server over stdio
+bun run eval               # built-in eval suites (requires a configured provider)
+bun run kairos             # standalone Kairos daemon
 ```
 
-### Simulation Studio (MiroFish)
-```bash
-# Spawn an AI swarm to test the fallout of an architectural change
-bun run cowork "/forecast Refactoring the core DB schema to use PostgreSQL"
+## Security model
+
+- **HTTP surfaces** (`apps/dashboard`, `packages/hermes`, `packages/openclaw`)
+  bind to `127.0.0.1` by default and require a Bearer token. An ephemeral token
+  is generated and printed to stderr for local use. Non-loopback binds require
+  an explicit token of at least 16 characters (`COWORK_BIND_HOST`).
+- State-changing requests are rejected when `Origin` / `Sec-Fetch-Site`
+  indicate a cross-site request. Webhook ingress requires
+  `X-Cowork-Signature: sha256=<hmac>` over the raw body.
+- **Tool calls** pass through `PermissionGate`. Bash and other approval-flagged
+  tools always ask; non-interactive sessions deny approvals unless `--yes`.
+  A shared `AgentPolicy` propagates permissions, approvals, settings, hooks,
+  cwd and abort signals into nested agents and MCP/gateway calls.
+- **Paths** are confined to the project root, including symlink resolution.
+- **Child processes** receive a filtered environment (`filterEnv`), and tool
+  output/audit logs are scrubbed of credential patterns.
+- **Project config is untrusted**: `<project>/.cowork/settings.json` cannot set
+  API keys, base URLs, MCP servers, permission modes, or sandbox settings. Put
+  those in `~/.cowork/settings.json` or environment variables.
+- `JsEval` is permanently disabled; `HttpFetch` is allowlist-gated; `GitCommit`
+  requires explicit file paths and approval.
+
+See `.env.example` for the complete, current list of environment variables and
+`CONTRIBUTING.md` for the development and security checklist.
+
+## Repository map
+
+```
+apps/
+  cowork-cli/          CLI REPL + one-shot entry point
+  dashboard/           token-protected local HTTP dashboard (built-in UI)
+  dashboard-frontend/  experimental React/Vite dashboard
+  desktop/             experimental Electron shell
+  kairos-daemon/       standalone background daemon
+packages/
+  core/                agent loop, tools, providers, memory, permissions, policy
+  security/            HttpGuard, TOTP, scrubbing, env filtering, network sandbox, audit
+  graphify/            knowledge-graph builder, extractors, storage, query
+  hermes/              MCP server (canonical implementation)
+  openclaw/            HTTP + Telegram gateway
+  kairos/ wiki/ telemetry/ analytics/ orchestrator/ research/ mirofish/
+  eval/ cache/ memory-v2/ voice/ templates/ marketplace/ projects/
+  react-agent/ plugins/   experimental / stubs
+scripts/build-graph.ts    graph build entry point
+.github/workflows/ci.yml  install → typecheck → tests → graph → CLI smoke
 ```
 
-### Standard REPL
-```bash
-# Launch interactive agent loop
-bun run cowork
-```
+## License
 
-## Repository Map
-
-```
-locoworker/
-├── apps/
-│   ├── cowork-cli/         # CLI entry point (REPL + one-shot)
-│   ├── dashboard/          # React Web UI + BuddyWidget + Gantt tab
-│   └── desktop/            # Tauri desktop shell wrapper
-├── packages/
-│   ├── core/               # Agent engine, Tools, Providers, Commands
-│   ├── graphify/           # Knowledge graph extractor
-│   ├── wiki/               # Compounding knowledge wiki
-│   ├── kairos/             # Background task daemon
-│   ├── orchestrator/       # Multi-agent UltraPlan decomposition
-│   ├── mirofish/           # Swarm scenario simulation
-│   ├── openclaw/           # Telegram/Discord gateway
-│   ├── security/           # TOTP 2FA & Docker sandboxing
-│   └── ... (21 packages total)
-├── completeproject.md      # The original master architecture spec
-└── package.json            # Bun workspaces root
-```
+MIT — see [LICENSE](LICENSE).

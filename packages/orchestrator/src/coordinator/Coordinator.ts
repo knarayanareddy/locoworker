@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 import { TaskQueue } from "../queue/TaskQueue.js";
 import { WorkerPool } from "../worker/WorkerPool.js";
 import type { OrchestratorTask, TaskPriority } from "../queue/types.js";
@@ -12,6 +12,7 @@ export interface CoordinatorConfig {
   systemPrompt: string;
   workerCount?: number;
   enablePlanning?: boolean;
+  policy?: AgentPolicy;
 }
 
 export interface OrchestrationResult {
@@ -50,12 +51,13 @@ export class Coordinator {
     // We assume engine.projectRoot or similar is available, but let's try to get it from settings if not.
     // For now, we'll try to find where we can get a project root.
     // Actually, CoordinatorConfig doesn't have it. Let's add it or use process.cwd().
-    this.queue = new TaskQueue(process.cwd());
+    this.queue = new TaskQueue(config.policy?.workingDirectory ?? process.cwd());
     this.pool = new WorkerPool({
       engine: config.engine,
       tools: config.tools,
       defaultSystemPrompt: config.systemPrompt,
       size: config.workerCount ?? 3,
+      policy: config.policy,
     });
   }
 
@@ -147,9 +149,10 @@ export class Coordinator {
           systemPrompt: DECOMPOSE_SYSTEM_PROMPT,
           tools: [],
           maxTurns: 1,
+          policy: this.config.policy,
         }
       )) {
-        if (event.type === "text") rawOutput += event.text;
+        if (event.type === "complete") rawOutput = event.text;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;
           outputTokens = event.usage?.outputTokens ?? 0;
@@ -207,8 +210,9 @@ export class Coordinator {
         systemPrompt: this.config.systemPrompt,
         tools: [],
         maxTurns: 1,
+        policy: this.config.policy,
       })) {
-        if (event.type === "text") text += event.text;
+        if (event.type === "complete") text = event.text;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;
           outputTokens = event.usage?.outputTokens ?? 0;

@@ -1,4 +1,4 @@
-import { appendFile, mkdir } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { Message } from "../types.js";
 
@@ -23,12 +23,59 @@ export class TranscriptLog {
 
     let text = "";
     for (const m of messages) {
-      const content = typeof m.content === "string" 
-        ? m.content 
+      const content = typeof m.content === "string"
+        ? m.content
         : m.content.map(b => b.type === "text" ? b.text : `[${b.type}]`).join("\n");
       text += `\n[${ts}] [${sessionId}] ${m.role}\n${content.trimEnd()}\n`;
     }
 
     await appendFile(path, text, "utf8");
+  }
+
+  /**
+   * Reconstruct the message history for a session (used by `--resume`).
+   * Entries are parsed from the daily markdown files; tool-result blocks are
+   * intentionally omitted because they are not useful as chat context.
+   */
+  async readSession(sessionId: string, limit = 100): Promise<Message[]> {
+    let files: string[];
+    try {
+      files = (await readdir(join(this.root, "transcripts")))
+        .filter((f) => f.endsWith(".md"))
+        .sort();
+    } catch {
+      return [];
+    }
+
+    const messages: Message[] = [];
+    const header = /^\[([^\]]+)\] \[([^\]]+)\] (user|assistant|system)\s*$/;
+    for (const file of files) {
+      let raw: string;
+      try {
+        raw = await readFile(join(this.root, "transcripts", file), "utf8");
+      } catch {
+        continue;
+      }
+      let current: { role: "user" | "assistant" | "system"; lines: string[] } | null = null;
+      const flush = () => {
+        if (!current) return;
+        const text = current.lines.join("\n").trim();
+        if (text) messages.push({ role: current.role, content: text });
+        current = null;
+      };
+      for (const line of raw.split("\n")) {
+        const match = header.exec(line);
+        if (match) {
+          flush();
+          if (match[2] === sessionId) {
+            current = { role: match[3] as "user" | "assistant" | "system", lines: [] };
+          }
+          continue;
+        }
+        if (current) current.lines.push(line);
+      }
+      flush();
+    }
+    return limit > 0 ? messages.slice(-limit) : messages;
   }
 }

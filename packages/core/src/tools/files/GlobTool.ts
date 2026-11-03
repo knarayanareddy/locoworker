@@ -1,6 +1,6 @@
 import { Glob } from "bun";
-import { resolve } from "node:path";
-import { type ToolDefinition, type ExecutionContext, type ToolResult, ok } from "../../Tool.js";
+import { guardPath } from "./pathGuard.js";
+import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 
 type GlobInput = {
@@ -26,7 +26,9 @@ export const GlobTool: ToolDefinition<GlobInput> = {
   },
 
   async execute(input: GlobInput, ctx: ExecutionContext): Promise<ToolResult> {
-    const root = resolve(ctx.workingDirectory, input.cwd ?? ".");
+    const guarded = await guardPath(ctx.workingDirectory, input.cwd ?? ".");
+    if (guarded.error) return err(guarded.error);
+    const root = guarded.path!;
     const glob = new Glob(input.pattern);
     const matches: string[] = [];
 

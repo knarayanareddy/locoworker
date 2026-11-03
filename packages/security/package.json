@@ -6,10 +6,13 @@
     ".": "./src/index.ts",
     "./audit": "./src/audit/index.ts",
     "./scrub": "./src/scrub/index.ts",
-    "./sandbox": "./src/sandbox/index.ts"
+    "./sandbox": "./src/sandbox/index.ts",
+    "./env": "./src/env/index.ts",
+    "./network": "./src/network/index.ts"
   },
   "devDependencies": {
     "typescript": "^5.4.0",
     "@types/bun": "latest"
-  }
+  },
+  "main": "./src/index.ts"
 }

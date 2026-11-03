@@ -5,7 +5,14 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../graphify" }
+    {
+      "path": "../graphify"
+    },
+    {
+      "path": "../security"
+    }
   ],
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

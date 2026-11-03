@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, MessageSquare, Zap, Clock, ChevronRight, Send, X, RotateCcw, Archive } from 'lucide-react';
-import { SESSIONS, AGENTS } from '../data/mockData';
+import { motion } from 'framer-motion';
+import { Brain, MessageSquare, Zap, Clock, Send, RotateCcw, Archive } from 'lucide-react';
+import { SESSIONS } from '../data/mockData';
 
 const SAMPLE_CONVERSATION = [
   { role: 'user', content: 'Refactor the auth module to use JWT refresh token rotation with 15-minute expiry.' },

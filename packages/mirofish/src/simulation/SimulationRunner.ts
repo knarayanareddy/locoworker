@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 import { SimAgent } from "../agents/SimAgent.js";
 import type { SimAgentMessage } from "../agents/SimAgent.js";
 import type { SimulationConfig, SimulationResult, RoundResult } from "./types.js";
@@ -10,7 +10,8 @@ export class SimulationRunner {
   constructor(
     private engine: QueryEngine,
     private tools: ToolDefinition[],
-    private wikiStore?: WikiStore
+    private wikiStore?: WikiStore,
+    private policy?: AgentPolicy
   ) {}
 
   async run(
@@ -28,6 +29,7 @@ export class SimulationRunner {
           systemPrompt: a.systemPrompt,
           engine: this.engine,
           tools: this.tools,
+          policy: this.policy,
         })
     );
 
@@ -143,8 +145,9 @@ export class SimulationRunner {
         tools: [],
         maxTurns: 1,
         maxTokens: 1500,
+        policy: this.policy,
       })) {
-        if (event.type === "text") text += event.text;
+        if (event.type === "complete") text = event.text;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;
           outputTokens = event.usage?.outputTokens ?? 0;

@@ -2,13 +2,13 @@
   "name": "@cowork/kairos",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./daemon": "./dist/daemon/index.js",
-    "./scheduler": "./dist/scheduler/index.js",
-    "./watcher": "./dist/watcher/index.js"
+    ".": "./src/index.ts",
+    "./daemon": "./src/daemon/index.ts",
+    "./scheduler": "./src/scheduler/index.ts",
+    "./watcher": "./src/watcher/index.ts"
   },
   "dependencies": {
     "@cowork/core": "workspace:*"

@@ -42,7 +42,7 @@ export class STTClient {
       const blob = new Blob([await Bun.file(audio).arrayBuffer()], { type: mimeType });
       form.append("file", blob, path.basename(audio));
     } else {
-      form.append("file", new Blob([audio], { type: mimeType }), "audio.wav");
+      form.append("file", new Blob([new Uint8Array(audio).buffer as ArrayBuffer], { type: mimeType }), "audio.wav");
     }
 
     form.append("model", "whisper-1");
@@ -71,8 +71,10 @@ export class STTClient {
     const baseUrl = this.config.sttBaseUrl ?? "http://localhost:8080";
     const form = new FormData();
 
-    const audioData =
-      typeof audio === "string" ? await Bun.file(audio).arrayBuffer() : audio.buffer;
+    const audioData: ArrayBuffer =
+      typeof audio === "string"
+        ? await Bun.file(audio).arrayBuffer()
+        : (new Uint8Array(audio).buffer as ArrayBuffer);
     form.append("file", new Blob([audioData], { type: "audio/wav" }), "audio.wav");
     form.append("model", "whisper-1");
 
@@ -95,8 +97,10 @@ export class STTClient {
     const apiKey = this.config.sttApiKey ?? process.env.DEEPGRAM_API_KEY;
     if (!apiKey) throw new Error("STTClient: DEEPGRAM_API_KEY not set");
 
-    const audioData =
-      typeof audio === "string" ? await Bun.file(audio).arrayBuffer() : audio.buffer;
+    const audioData: ArrayBuffer =
+      typeof audio === "string"
+        ? await Bun.file(audio).arrayBuffer()
+        : (new Uint8Array(audio).buffer as ArrayBuffer);
 
     const res = await fetch(
       "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true",

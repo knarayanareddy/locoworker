@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 import type { ResearchPlan, ResearchSession, ResearchFinding, ResearchStep } from "../planner/types.js";
 
 const EXECUTOR_SYSTEM_PROMPT = `You are a research agent executing a specific research step.
@@ -11,7 +11,7 @@ CONFIDENCE: <0.0-1.0>
 KEY_FINDINGS: <bullet list of 1-3 key findings from this step>`;
 
 export class ResearchExecutor {
-  constructor(private engine: QueryEngine, private tools: ToolDefinition[]) {}
+  constructor(private engine: QueryEngine, private tools: ToolDefinition[], private policy?: AgentPolicy) {}
 
   async executeSession(
     plan: ResearchPlan,
@@ -57,9 +57,9 @@ export class ResearchExecutor {
           systemPrompt: EXECUTOR_SYSTEM_PROMPT,
           tools: this.tools,
           maxTurns: 5,
-          requestApproval: async () => true,
+          policy: this.policy,
         })) {
-          if (event.type === "text") result += event.text;
+          if (event.type === "complete") result = event.text;
           if (event.type === "complete") {
             inputTokens = event.usage?.inputTokens ?? 0;
             outputTokens = event.usage?.outputTokens ?? 0;

@@ -17,6 +17,7 @@
 
 import path from "path";
 import { createHash } from "node:crypto";
+import { stat as fsStat } from "node:fs/promises";
 
 export interface CachedPromptLayer {
   content: string;
@@ -118,16 +119,15 @@ export class CacheAwareSystemPrompt {
     if (!this.options.claudeMdPath) return null;
 
     try {
-      const file = Bun.file(this.options.claudeMdPath);
-      const stat = await file.stat();
-      const mtime = stat?.mtime?.getTime() ?? 0;
+      const info = await fsStat(this.options.claudeMdPath);
+      const mtime = info.mtimeMs;
 
       // Use cached version if file hasn't changed
       if (this.cachedClaudeMd && this.cachedClaudeMd.mtime === mtime) {
         return this.cachedClaudeMd.content;
       }
 
-      const content = (await file.text()).slice(0, 12_000);
+      const content = (await Bun.file(this.options.claudeMdPath).text()).slice(0, 12_000);
       this.cachedClaudeMd = { content, mtime };
       return content;
     } catch {

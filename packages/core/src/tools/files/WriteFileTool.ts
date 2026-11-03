@@ -1,5 +1,6 @@
 import { mkdir, writeFile, stat } from "node:fs/promises";
-import { resolve, dirname } from "node:path";
+import { dirname } from "node:path";
+import { guardPath } from "./pathGuard.js";
 import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 
@@ -24,7 +25,9 @@ export const WriteFileTool: ToolDefinition<WriteInput> = {
   },
 
   async execute(input: WriteInput, ctx: ExecutionContext): Promise<ToolResult> {
-    const fullPath = resolve(ctx.workingDirectory, input.path);
+        const guarded = await guardPath(ctx.workingDirectory, input.path);
+    if (guarded.error) return err(guarded.error);
+    const fullPath = guarded.path!;
 
     let existed = false;
     let prevSize = 0;

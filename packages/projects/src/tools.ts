@@ -1,3 +1,4 @@
+import { PermissionLevel } from "@cowork/core";
 import type { ToolDefinition, ToolContext } from "@cowork/core";
 import { ProjectManager } from "./ProjectManager";
 
@@ -16,7 +17,7 @@ export const ProjectList: ToolDefinition = {
     },
     required: [],
   },
-  permissionLevel: "READ_ONLY",
+  permissionLevel: PermissionLevel.READ_ONLY,
   async execute(input: { status?: string }, _ctx: ToolContext) {
     const manager = new ProjectManager();
     const projects = await manager.list(input.status as any);
@@ -42,7 +43,7 @@ export const ProjectSwitch: ToolDefinition = {
     },
     required: ["project"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { project: string }, _ctx: ToolContext) {
     const manager = new ProjectManager();
     const record = await manager.setActive(input.project);
@@ -66,7 +67,7 @@ export const ProjectRegister: ToolDefinition = {
     },
     required: ["path"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { path: string; name?: string; description?: string }, _ctx: ToolContext) {
     const manager = new ProjectManager();
     const record = await manager.register(input.path, {

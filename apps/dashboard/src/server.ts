@@ -17,7 +17,7 @@ const getArg = (flag: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 
-const port = parseInt(getArg("--port") ?? "3720");
+const port = parseInt(getArg("--port") ?? process.env.COWORK_DASHBOARD_PORT ?? "3720", 10);
 const projectRoot = getArg("--project") ?? process.cwd();
 
 const router = new DashboardRouter({ projectRoot, port });

@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 import path from "path";
+import { guardPath } from "../files/pathGuard.js";
 
 export const TemplateRender: ToolDefinition = {
   name: "TemplateRender",
@@ -18,8 +19,9 @@ export const TemplateRender: ToolDefinition = {
   async execute(input: { template: string; variables: Record<string, string>; isFilePath?: boolean }, ctx) {
     let source = input.template;
     if (input.isFilePath) {
-      const p = path.resolve(ctx.workingDirectory, input.template);
-      source = await Bun.file(p).text();
+      const guarded = await guardPath(ctx.workingDirectory, input.template);
+      if (guarded.error) return { content: guarded.error, isError: true };
+      source = await Bun.file(guarded.path!).text();
     }
     const rendered = source.replace(/\{\{(\w+)\}\}/g, (_, key) => {
       return input.variables[key] ?? `{{${key}}}`;

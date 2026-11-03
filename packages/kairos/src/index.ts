@@ -2,6 +2,7 @@ export * from "./scheduler/index.js";
 export * from "./watcher/index.js";
 export * from "./daemon/index.js";
 export * from "./ipc.js";
+export { defaultKairosTasks } from "./defaultTasks.js";
 
 // Aliases for compatibility with other packages
 export type { ScheduledTask as KairosTask } from "./scheduler/types.js";

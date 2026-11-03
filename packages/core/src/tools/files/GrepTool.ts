@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { resolve } from "node:path";
+import { guardPath } from "./pathGuard.js";
 import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 
@@ -32,7 +32,9 @@ export const GrepTool: ToolDefinition<GrepInput> = {
   },
 
   async execute(input: GrepInput, ctx: ExecutionContext): Promise<ToolResult> {
-    const root = resolve(ctx.workingDirectory, input.path ?? ".");
+    const guarded = await guardPath(ctx.workingDirectory, input.path ?? ".");
+    if (guarded.error) return err(guarded.error);
+    const root = guarded.path!;
     const args: string[] = ["--no-heading", "--line-number", "--color=never"];
     if (input.caseInsensitive) args.push("-i");
     if (input.context !== undefined) args.push(`-C${input.context}`);

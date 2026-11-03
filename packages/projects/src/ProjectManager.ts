@@ -111,7 +111,7 @@ export class ProjectManager {
     const project = await this.get(idOrPath);
     if (!project) return null;
 
-    const memory = new MemorySystem(project.path);
+    const memory = new MemorySystem({ projectRoot: project.path });
 
     let memoryEntries = 0;
     let transcriptDays = 0;

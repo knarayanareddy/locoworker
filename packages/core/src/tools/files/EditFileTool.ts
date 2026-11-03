@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { guardPath } from "./pathGuard.js";
 import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 
@@ -32,7 +32,9 @@ export const EditFileTool: ToolDefinition<EditInput> = {
       return err("old_string and new_string must differ");
     }
 
-    const fullPath = resolve(ctx.workingDirectory, input.path);
+        const guarded = await guardPath(ctx.workingDirectory, input.path);
+    if (guarded.error) return err(guarded.error);
+    const fullPath = guarded.path!;
 
     let original: string;
     try {

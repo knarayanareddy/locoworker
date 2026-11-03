@@ -10,6 +10,7 @@ import { HybridSearch } from "./HybridSearch.js";
 import { getCoworkHome } from "../state/Settings.js";
 import type { MemoryEntry, MemoryType } from "./MemoryTypes.js";
 import type { Message } from "../types.js";
+import type { SearchResult } from "./HybridSearch.js";
 
 export interface MemorySystemOptions {
   projectRoot: string;
@@ -67,10 +68,15 @@ export class MemorySystem {
     return this.store.list(filter);
   }
 
-  async query(text: string, limit = 10, filter?: { type?: MemoryType }): Promise<any[]> {
+  async query(text: string, limit = 10, filter?: { type?: MemoryType }): Promise<SearchResult[]> {
     const candidates = await this.store.list(filter ? { type: filter.type, limit: 200 } : { limit: 200 });
     const results = await this.search.search(text, candidates, limit);
     return results;
+  }
+
+  /** Read a previous session's chat history (used by `--resume`). */
+  async readTranscript(sessionId: string, limit = 100): Promise<Message[]> {
+    return this.transcript.readSession(sessionId, limit);
   }
 
   async rebuildIndex(): Promise<void> {

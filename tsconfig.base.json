@@ -8,38 +8,127 @@
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
-    "types": ["bun", "node"],
+    "types": [
+      "bun",
+      "node"
+    ],
     "composite": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@cowork/core":          ["./packages/core/src/index.ts"],
-      "@cowork/core/*":        ["./packages/core/src/*"],
-      "@cowork/graphify":      ["./packages/graphify/src/index.ts"],
-      "@cowork/graphify/*":    ["./packages/graphify/src/*"],
-      "@cowork/telemetry":     ["./packages/telemetry/src/index.ts"],
-      "@cowork/telemetry/*":   ["./packages/telemetry/src/*"],
-      "@cowork/analytics":     ["./packages/analytics/src/index.ts"],
-      "@cowork/analytics/*":   ["./packages/analytics/src/*"],
-      "@cowork/security":      ["./packages/security/src/index.ts"],
-      "@cowork/security/*":    ["./packages/security/src/*"],
-      "@cowork/kairos":        ["./packages/kairos/src/index.ts"],
-      "@cowork/kairos/*":      ["./packages/kairos/src/*"],
-      "@cowork/wiki":          ["./packages/wiki/src/index.ts"],
-      "@cowork/wiki/*":        ["./packages/wiki/src/*"],
-      "@cowork/research":      ["./packages/research/src/index.ts"],
-      "@cowork/research/*":    ["./packages/research/src/*"],
-      "@cowork/orchestrator":  ["./packages/orchestrator/src/index.ts"],
-      "@cowork/orchestrator/*":["./packages/orchestrator/src/*"],
-      "@cowork/mirofish":      ["./packages/mirofish/src/index.ts"],
-      "@cowork/mirofish/*":    ["./packages/mirofish/src/*"],
-      "@cowork/openclaw":      ["./packages/openclaw/src/index.ts"],
-      "@cowork/openclaw/*":    ["./packages/openclaw/src/*"],
-      "@cowork/hermes":        ["./packages/hermes/src/index.ts"],
-      "@cowork/hermes/*":      ["./packages/hermes/src/*"],
-      "@cowork/plugins":       ["./packages/plugins/src/index.ts"]
+      "@cowork/core": [
+        "./packages/core/src/index.ts"
+      ],
+      "@cowork/core/*": [
+        "./packages/core/src/*"
+      ],
+      "@cowork/graphify": [
+        "./packages/graphify/src/index.ts"
+      ],
+      "@cowork/graphify/*": [
+        "./packages/graphify/src/*"
+      ],
+      "@cowork/telemetry": [
+        "./packages/telemetry/src/index.ts"
+      ],
+      "@cowork/telemetry/*": [
+        "./packages/telemetry/src/*"
+      ],
+      "@cowork/analytics": [
+        "./packages/analytics/src/index.ts"
+      ],
+      "@cowork/analytics/*": [
+        "./packages/analytics/src/*"
+      ],
+      "@cowork/security": [
+        "./packages/security/src/index.ts"
+      ],
+      "@cowork/security/*": [
+        "./packages/security/src/*"
+      ],
+      "@cowork/kairos": [
+        "./packages/kairos/src/index.ts"
+      ],
+      "@cowork/kairos/*": [
+        "./packages/kairos/src/*"
+      ],
+      "@cowork/wiki": [
+        "./packages/wiki/src/index.ts"
+      ],
+      "@cowork/wiki/*": [
+        "./packages/wiki/src/*"
+      ],
+      "@cowork/research": [
+        "./packages/research/src/index.ts"
+      ],
+      "@cowork/research/*": [
+        "./packages/research/src/*"
+      ],
+      "@cowork/orchestrator": [
+        "./packages/orchestrator/src/index.ts"
+      ],
+      "@cowork/orchestrator/*": [
+        "./packages/orchestrator/src/*"
+      ],
+      "@cowork/mirofish": [
+        "./packages/mirofish/src/index.ts"
+      ],
+      "@cowork/mirofish/*": [
+        "./packages/mirofish/src/*"
+      ],
+      "@cowork/openclaw": [
+        "./packages/openclaw/src/index.ts"
+      ],
+      "@cowork/openclaw/*": [
+        "./packages/openclaw/src/*"
+      ],
+      "@cowork/hermes": [
+        "./packages/hermes/src/index.ts"
+      ],
+      "@cowork/hermes/*": [
+        "./packages/hermes/src/*"
+      ],
+      "@cowork/plugins": [
+        "./packages/plugins/src/index.ts"
+      ],
+      "@cowork/cache": [
+        "./packages/cache/src/index.ts"
+      ],
+      "@cowork/eval": [
+        "./packages/eval/src/index.ts"
+      ],
+      "@cowork/marketplace": [
+        "./packages/marketplace/src/index.ts"
+      ],
+      "@cowork/memory-v2": [
+        "./packages/memory-v2/src/index.ts"
+      ],
+      "@cowork/projects": [
+        "./packages/projects/src/index.ts"
+      ],
+      "@cowork/react-agent": [
+        "./packages/react-agent/src/index.ts"
+      ],
+      "@cowork/templates": [
+        "./packages/templates/src/index.ts"
+      ],
+      "@cowork/voice": [
+        "./packages/voice/src/index.ts"
+      ],
+      "@cowork/dashboard": [
+        "./apps/dashboard/src/index.ts"
+      ],
+      "@cowork/cli": [
+        "./apps/cowork-cli/src/index.ts"
+      ],
+      "@cowork/kairos-daemon": [
+        "./apps/kairos-daemon/src/index.ts"
+      ],
+      "@cowork/desktop": [
+        "./apps/desktop/src/main.ts"
+      ]
     }
   }
 }

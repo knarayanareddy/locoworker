@@ -5,9 +5,9 @@
 import { STTClient } from "./STTClient";
 import { TTSClient } from "./TTSClient";
 import type { VoiceConfig } from "./types";
-import { queryLoop, resolveSettings } from "@cowork/core";
+import { queryLoop, resolveSettings, resolveProvider, QueryEngine, type Message } from "@cowork/core";
 import { DEFAULT_TOOLS } from "@cowork/core";
-import mkdir from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "path";
 import { tmpdir } from "node:os";
 
@@ -52,18 +52,36 @@ export class VoiceSession {
 
     // ── Agent ──────────────────────────────────────────────────────────────
     const settings = await resolveSettings(this.config.projectRoot, process.env, {});
+    const provider = resolveProvider({
+      provider: settings.provider,
+      model: settings.model,
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      env: process.env,
+    });
+    const engine = new QueryEngine(provider);
+    const history: Message[] = [
+      ...this.history.map((h) => ({ role: h.role as Message["role"], content: h.content })),
+      { role: "user" as const, content: userText },
+    ];
     let agentText = "";
 
     for await (const event of queryLoop(userText, {
-      settings,
+      engine,
       systemPrompt:
         this.config.systemPrompt ??
         "You are a helpful voice assistant. Keep responses concise (2–3 sentences max) since they will be spoken aloud.",
       tools: DEFAULT_TOOLS,
-      projectRoot: this.config.projectRoot,
-      history: this.history.map((h) => ({ role: h.role as any, content: h.content })),
+      history,
+      policy: {
+        permissionLevel: settings.permissionLevel,
+        requestApproval: async () => false,
+        settings,
+        workingDirectory: this.config.projectRoot,
+        maxTurns: 6,
+      },
     })) {
-      if (event.type === "text") agentText += (event as any).text ?? "";
+      if (event.type === "complete") agentText = event.text;
     }
 
     if (!agentText) agentText = "I'm sorry, I couldn't process that request.";

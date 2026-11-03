@@ -1,11 +1,42 @@
+# Dependencies
 node_modules/
+**/node_modules/
+.npm-cache/
+.pnpm-store/
+
+# Build output (tsc -b emits into each workspace's dist/)
 dist/
-build/
+**/dist/
 *.tsbuildinfo
+*.d.ts.map
+*.js.map
+
+# Generated source-tree artifacts (checked in by mistake in earlier commits)
+packages/*/src/**/*.js
+packages/*/src/**/*.d.ts
+apps/*/src/**/*.js
+apps/*/src/**/*.d.ts
+
+# Local state and generated data
+.cowork/
+.cowork-test/
+graphify-out/
+GRAPH_REPORT.md
+*.log
+typecheck_errors.txt
+typecheck_output.txt
+
+# Environment / secrets
 .env
 .env.local
-.cowork/
-~.cowork/
+*.env.local
+
+# OS / editor
 .DS_Store
-*.log
-coverage/
+.idea/
+.vscode/
+
+# Mixed package managers (bun.lock is canonical)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

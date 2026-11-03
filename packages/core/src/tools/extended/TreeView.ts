@@ -2,6 +2,7 @@ import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 import { Glob } from "bun";
 import path from "path";
+import { guardPath } from "../files/pathGuard.js";
 
 export const TreeView: ToolDefinition = {
   name: "TreeView",
@@ -15,7 +16,9 @@ export const TreeView: ToolDefinition = {
   },
   permissionLevel: PermissionLevel.READ_ONLY,
   async execute(input: { dir?: string; depth?: number }, ctx) {
-    const root = path.resolve(ctx.workingDirectory, input.dir ?? ".");
+    const guarded = await guardPath(ctx.workingDirectory, input.dir ?? ".");
+    if (guarded.error) return { content: guarded.error, isError: true };
+    const root = guarded.path!;
     const depth = input.depth ?? 2;
     const lines: string[] = [path.basename(root) + "/"];
 

@@ -1,3 +1,4 @@
+import { PermissionLevel } from "@cowork/core";
 import type { ToolDefinition, ToolContext } from "@cowork/core";
 import { EpisodicMemory } from "./EpisodicMemory";
 import { MemoryGraph } from "./MemoryGraph";
@@ -33,7 +34,7 @@ export const EpisodeRecord: ToolDefinition = {
     },
     required: ["type", "title", "summary"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(
     input: {
       type: string;
@@ -75,7 +76,7 @@ export const EpisodeSearch: ToolDefinition = {
     },
     required: [],
   },
-  permissionLevel: "READ_ONLY",
+  permissionLevel: PermissionLevel.READ_ONLY,
   async execute(
     input: { query?: string; type?: string; limit?: number },
     ctx: ToolContext
@@ -114,7 +115,7 @@ export const MemoryGraphQuery: ToolDefinition = {
     },
     required: ["action"],
   },
-  permissionLevel: "READ_ONLY",
+  permissionLevel: PermissionLevel.READ_ONLY,
   async execute(
     input: { action: string; nodeId?: string; targetId?: string },
     ctx: ToolContext
@@ -184,7 +185,7 @@ export const ConsolidateV2: ToolDefinition = {
     },
     required: [],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { dryRun?: boolean; minClusterSize?: number }, ctx: ToolContext) {
     const consolidation = new ConsolidationV2({
       projectRoot: ctx.workingDirectory,

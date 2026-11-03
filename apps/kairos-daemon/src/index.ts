@@ -39,7 +39,7 @@ async function main() {
         maxTurns: 5,
         requestApproval: async () => false,
       })) {
-        if (event.type === "text") output += event.text;
+        if (event.type === "complete") output = event.text;
       }
       process.stderr.write(`[kairos-daemon] Task "${task.name}" output: ${output.slice(0, 100)}\n`);
     },

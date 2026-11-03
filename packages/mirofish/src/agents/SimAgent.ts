@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 
 export interface SimAgentConfig {
   id?: string;
@@ -9,6 +9,7 @@ export interface SimAgentConfig {
   systemPrompt: string;
   engine: QueryEngine;
   tools?: ToolDefinition[];
+  policy?: AgentPolicy;
 }
 
 export interface SimAgentMessage {
@@ -28,6 +29,7 @@ export class SimAgent {
   private systemPrompt: string;
   private engine: QueryEngine;
   private tools: ToolDefinition[];
+  private policy?: AgentPolicy;
   private memory: SimAgentMessage[] = [];
 
   constructor(config: SimAgentConfig) {
@@ -37,6 +39,7 @@ export class SimAgent {
     this.systemPrompt = config.systemPrompt;
     this.engine = config.engine;
     this.tools = config.tools ?? [];
+    this.policy = config.policy;
   }
 
   async respond(
@@ -71,10 +74,10 @@ export class SimAgent {
         systemPrompt: this.systemPrompt,
         tools: this.tools,
         maxTurns: 2,
-        requestApproval: async () => true,
         maxTokens: 500,
+        policy: this.policy,
       })) {
-        if (event.type === "text") content += event.text;
+        if (event.type === "complete") content = event.text;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;
           outputTokens = event.usage?.outputTokens ?? 0;

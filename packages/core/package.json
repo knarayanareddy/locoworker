@@ -3,23 +3,24 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./tools": "./dist/tools/index.js",
-    "./tools/graphify": "./dist/tools/graphify/index.js",
-    "./providers": "./dist/providers/index.js",
-    "./hooks": "./dist/hooks/index.js",
-    "./session": "./dist/session/index.js",
-    "./skills": "./dist/skills/index.js",
-    "./mcp": "./dist/mcp/index.js",
-    "./commands": "./dist/commands/index.js",
-    "./planning": "./dist/planning/index.js"
+    ".": "./src/index.ts",
+    "./tools": "./src/tools/index.ts",
+    "./tools/graphify": "./src/tools/graphify/index.ts",
+    "./providers": "./src/providers/index.ts",
+    "./hooks": "./src/hooks/index.ts",
+    "./session": "./src/session/index.ts",
+    "./skills": "./src/skills/index.ts",
+    "./mcp": "./src/mcp/index.ts",
+    "./commands": "./src/commands/index.ts",
+    "./planning": "./src/planning/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.1",
     "@cowork/graphify": "workspace:*",
-    "openai": "^4.67.0"
+    "openai": "^4.67.0",
+    "@cowork/security": "workspace:*"
   }
 }

@@ -8,8 +8,8 @@
  *   hermes --port 4000            (SSE on custom port)
  *   hermes --tools Read,Write     (expose specific tools)
  */
-
-import { HermesServer } from "./HermesServer";
+import { DEFAULT_TOOLS, PermissionLevel } from "@cowork/core";
+import { HermesServer } from "./index.js";
 
 const args = process.argv.slice(2);
 const get = (flag: string) => {
@@ -17,13 +17,23 @@ const get = (flag: string) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 
-const server = new HermesServer({
-  projectRoot: process.cwd(),
-  transport: (get("--transport") as "stdio" | "sse") ?? "stdio",
-  port: get("--port") ? parseInt(get("--port")!) : 3722,
-  tools: get("--tools") ? get("--tools")!.split(",") : undefined,
-  authToken: process.env.HERMES_AUTH_TOKEN,
-  verbose: args.includes("--verbose"),
-});
+const transport = (get("--transport") as "stdio" | "sse") ?? "stdio";
+const server = new HermesServer(
+  {
+    transport,
+    port: get("--port") ? parseInt(get("--port")!, 10) : 3722,
+    toolAllowlist: get("--tools") ? get("--tools")!.split(",") : undefined,
+    authToken: process.env.COWORK_HERMES_AUTH_TOKEN,
+    // A standalone server has no interactive user to approve tool calls.
+    permissionLevel: PermissionLevel.READ_ONLY,
+    requestApproval: async () => false,
+    workingDirectory: process.cwd(),
+  },
+  [...DEFAULT_TOOLS],
+);
 
-await server.start();
+if (transport === "stdio") await server.startStdio();
+else {
+  server.startSse();
+  await new Promise(() => {});
+}

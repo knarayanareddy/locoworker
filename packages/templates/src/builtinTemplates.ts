@@ -61,7 +61,7 @@ export const TYPESCRIPT_LIB_TEMPLATE: Template = {
     {
       path: ".cowork/settings.json",
       content: JSON.stringify(
-        { permissionMode: "STANDARD", maxTurns: 30, enableKairos: false },
+        { "permissionMode": "standard", "maxTurns": 30 },
         null,
         2
       ),
@@ -142,11 +142,17 @@ import { queryLoop, resolveSettings, DEFAULT_TOOLS } from "@cowork/core";
 const prompt = process.argv.slice(2).join(" ") || "Help me with this project.";
 const settings = await resolveSettings(process.cwd(), process.env, {});
 
+const provider = resolveProvider({
+  provider: settings.provider, model: settings.model,
+  apiKey: settings.apiKey, baseUrl: settings.baseUrl, env: process.env,
+});
+const engine = new QueryEngine(provider);
+
 for await (const event of queryLoop(prompt, {
-  settings,
+  engine,
   systemPrompt: "{{description}}",
   tools: DEFAULT_TOOLS,
-  projectRoot: process.cwd(),
+  policy: { permissionLevel: settings.permissionLevel, settings },
 })) {
   if (event.type === "text") process.stdout.write((event as any).text ?? "");
   if (event.type === "complete") {

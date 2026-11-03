@@ -2,13 +2,13 @@
   "name": "@cowork/wiki",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./store": "./dist/store/index.js",
-    "./compiler": "./dist/compiler/index.js",
-    "./tools": "./dist/tools/index.js"
+    ".": "./src/index.ts",
+    "./store": "./src/store/index.ts",
+    "./compiler": "./src/compiler/index.ts",
+    "./tools": "./src/tools/index.ts"
   },
   "dependencies": {
     "@cowork/core": "workspace:*"

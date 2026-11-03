@@ -1,19 +1,29 @@
 import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
+import { displayEnvValue, filterEnv } from "@cowork/security/env";
+
+const MAX_OUTPUT_CHARS = 20_000;
 
 export const EnvRead: ToolDefinition = {
   name: "EnvRead",
-  description: "Read environment variables.",
+  description:
+    "Read non-sensitive environment variables. Credential-like variables are always redacted and are never passed to child processes.",
   inputSchema: {
     type: "object",
     properties: { name: { type: "string" } },
   },
-  permissionLevel: PermissionLevel.READ_ONLY,
+  permissionLevel: PermissionLevel.CONSTRAINED,
   async execute(input: { name?: string }) {
     if (input.name) {
-      return { content: `${input.name}=${process.env[input.name] ?? ""}`, isError: false };
+      const value = process.env[input.name];
+      if (value === undefined) return { content: `${input.name}=`, isError: false };
+      return { content: displayEnvValue(input.name, value), isError: false };
     }
-    const vars = Object.keys(process.env).map(k => `${k}=${process.env[k]}`).join("\n");
-    return { content: vars.slice(0, 50000), isError: false };
+    const safe = filterEnv(process.env);
+    const text = Object.keys(safe)
+      .sort()
+      .map((k) => displayEnvValue(k, safe[k]))
+      .join("\n");
+    return { content: text.slice(0, MAX_OUTPUT_CHARS), isError: false };
   },
 };
