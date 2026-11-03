@@ -2,18 +2,21 @@
   "name": "@cowork/mirofish",
   "version": "0.1.0",
   "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./dist/index.js",
-    "./simulation": "./dist/simulation/index.js",
-    "./agents": "./dist/agents/index.js",
-    "./tools": "./dist/tools/index.js"
+    ".": "./src/index.ts",
+    "./simulation": "./src/simulation/index.ts",
+    "./agents": "./src/agents/index.ts",
+    "./tools": "./src/tools/index.ts"
   },
   "dependencies": {
     "@cowork/core": "workspace:*",
     "@cowork/wiki": "workspace:*",
     "@cowork/analytics": "workspace:*"
   },
-  "devDependencies": { "typescript": "^5.4.0", "@types/bun": "latest" }
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "latest"
+  }
 }

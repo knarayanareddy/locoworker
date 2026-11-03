@@ -1,20 +1,77 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/core" },
-    { "path": "./packages/graphify" },
-    { "path": "./packages/telemetry" },
-    { "path": "./packages/analytics" },
-    { "path": "./packages/security" },
-    { "path": "./packages/kairos" },
-    { "path": "./packages/wiki" },
-    { "path": "./packages/research" },
-    { "path": "./packages/orchestrator" },
-    { "path": "./packages/mirofish" },
-    { "path": "./packages/openclaw" },
-    { "path": "./packages/hermes" },
-    { "path": "./packages/plugins" },
-    { "path": "./apps/cowork-cli" },
-    { "path": "./apps/kairos-daemon" }
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/graphify"
+    },
+    {
+      "path": "./packages/telemetry"
+    },
+    {
+      "path": "./packages/analytics"
+    },
+    {
+      "path": "./packages/security"
+    },
+    {
+      "path": "./packages/kairos"
+    },
+    {
+      "path": "./packages/wiki"
+    },
+    {
+      "path": "./packages/research"
+    },
+    {
+      "path": "./packages/orchestrator"
+    },
+    {
+      "path": "./packages/mirofish"
+    },
+    {
+      "path": "./packages/openclaw"
+    },
+    {
+      "path": "./packages/hermes"
+    },
+    {
+      "path": "./packages/plugins"
+    },
+    {
+      "path": "./apps/cowork-cli"
+    },
+    {
+      "path": "./apps/kairos-daemon"
+    },
+    {
+      "path": "./packages/cache"
+    },
+    {
+      "path": "./packages/eval"
+    },
+    {
+      "path": "./packages/marketplace"
+    },
+    {
+      "path": "./packages/memory-v2"
+    },
+    {
+      "path": "./packages/projects"
+    },
+    {
+      "path": "./packages/react-agent"
+    },
+    {
+      "path": "./packages/templates"
+    },
+    {
+      "path": "./packages/voice"
+    },
+    {
+      "path": "./apps/dashboard"
+    }
   ]
 }

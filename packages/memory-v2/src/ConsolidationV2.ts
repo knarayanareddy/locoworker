@@ -40,15 +40,16 @@ export class ConsolidationV2 {
       ...config,
     };
     const provider = resolveProvider({
-      provider: config.provider,
+      provider: config.provider as import("@cowork/core").Settings["provider"],
       model: config.model,
+      env: process.env,
     });
     this.engine = new QueryEngine(provider);
   }
 
   async run(): Promise<ConsolidationReport> {
     const startMs = Date.now();
-    const memory = new MemorySystem(this.config.projectRoot);
+    const memory = new MemorySystem({ projectRoot: this.config.projectRoot });
     const entries = await memory.list();
 
     let entriesPruned = 0;
@@ -62,7 +63,7 @@ export class ConsolidationV2 {
         entry.confidence < (this.config.confidenceThreshold ?? 0.3)
       ) {
         if (!this.config.dryRun) {
-          await memory.delete(entry.id);
+          await memory.delete(entry.type, entry.id);
         }
         entriesPruned++;
       }
@@ -91,6 +92,7 @@ export class ConsolidationV2 {
       if (!this.config.dryRun) {
         // Create a new high-confidence summary entry
         await memory.save({
+          sessionId: null,
           type: "reference",
           name: `consolidated-cluster-${Date.now()}`,
           description: summary.title,
@@ -102,7 +104,7 @@ export class ConsolidationV2 {
 
         // Delete original cluster entries (replaced by summary)
         for (const entry of cluster) {
-          await memory.delete(entry.id);
+          await memory.delete(entry.type, entry.id);
           entriesMerged++;
         }
       }

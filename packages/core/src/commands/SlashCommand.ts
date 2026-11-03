@@ -6,6 +6,9 @@ import type { ContextCompressor } from "../services/compact/ContextCompressor.js
 import type { MemorySystem } from "../memdir/MemorySystem.js";
 import type { SessionManager } from "../session/SessionManager.js";
 import type { SkillRegistry } from "../skills/SkillRegistry.js";
+import type { ResolvedSettings } from "../state/Settings.js";
+import type { AgentPolicy } from "../policy/AgentPolicy.js";
+import type { HookRegistry } from "../hooks/HookRegistry.js";
 
 export interface SlashCommandContext {
   sessionId: string;
@@ -15,6 +18,9 @@ export interface SlashCommandContext {
   compressor?: ContextCompressor;
   sessionManager?: SessionManager;
   skills?: SkillRegistry;
+  settings?: ResolvedSettings;
+  policy?: AgentPolicy;
+  hooks?: HookRegistry;
   /** Print a line to the user (stdout) */
   print: (line: string) => void;
   /** Run a normal agent turn with the given prompt */

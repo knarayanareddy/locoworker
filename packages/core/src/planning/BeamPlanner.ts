@@ -41,7 +41,7 @@ export class BeamPlanner {
           maxTokens: 2000,
         }
       )) {
-        if (event.type === "text") rawOutput += event.text;
+        if (event.type === "complete") rawOutput = event.text;
         if (event.type === "complete") inputTokens = event.usage?.inputTokens ?? 0;
       }
     } catch {

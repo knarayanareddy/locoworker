@@ -19,8 +19,26 @@ export type PermissionMode =
   | "full"
   | "dangerous";
 
+export const PERMISSION_MODES: readonly PermissionMode[] = [
+  "read-only", "constrained", "standard", "elevated", "full", "dangerous",
+];
+
+/** Case-insensitive parse that throws on unknown values (fail closed). */
+export function parsePermissionMode(value: unknown): PermissionMode {
+  if (typeof value !== "string") {
+    throw new Error(`Invalid permission mode: expected a string, got ${typeof value}`);
+  }
+  const normalized = value.trim().toLowerCase().replace(/_/g, "-") as PermissionMode;
+  if (!PERMISSION_MODES.includes(normalized)) {
+    throw new Error(
+      `Invalid permission mode "${value}". Expected one of: ${PERMISSION_MODES.join(", ")}`,
+    );
+  }
+  return normalized;
+}
+
 export function modeToLevel(mode: PermissionMode): PermissionLevel {
-  switch (mode) {
+  switch (parsePermissionMode(mode)) {
     case "read-only": return PermissionLevel.READ_ONLY;
     case "constrained": return PermissionLevel.CONSTRAINED;
     case "standard": return PermissionLevel.STANDARD;

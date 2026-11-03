@@ -1,7 +1,7 @@
 import type { MarketplaceIndex, MarketplaceEntry, InstallResult } from "./types";
-import { MemorySystem } from "@cowork/core";
+import { MemorySystem, assertSafeId, guardPath } from "@cowork/core";
 import path from "path";
-import mkdir from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 
 // Default registry — can be overridden via env
 const DEFAULT_REGISTRY_URL =
@@ -74,18 +74,16 @@ export class MarketplaceClient {
       if (!res.ok) throw new Error(`Download failed: ${res.statusText}`);
 
       const pluginCode = await res.text();
-      const pluginsDir = path.join(
-        MemorySystem.rootFor(this.projectRoot),
-        "plugins",
-        pluginId
-      );
-      // @ts-ignore
-      await mkdir(pluginsDir, { recursive: true });
+      const pluginsRoot = path.join(MemorySystem.rootFor(this.projectRoot), "plugins");
+      const pluginsDir = path.join(pluginsRoot, assertSafeId(pluginId, "plugin id"));
+      await mkdir(pluginsDir, { recursive: true, mode: 0o700 });
 
-      // Write plugin code
-      const entryFile = path.join(pluginsDir, entry.entrypoint);
-      // @ts-ignore
-      await mkdir(path.dirname(entryFile), { recursive: true });
+      // The entrypoint comes from the remote registry: confine it to the
+      // plugin directory (reject ../ and absolute paths) before writing.
+      const guarded = await guardPath(pluginsDir, entry.entrypoint ?? "index.js");
+      if (guarded.error) throw new Error(guarded.error);
+      const entryFile = guarded.path!;
+      await mkdir(path.dirname(entryFile), { recursive: true, mode: 0o700 });
       await Bun.write(entryFile, pluginCode);
 
       // Write manifest
@@ -127,7 +125,7 @@ export class MarketplaceClient {
     const pluginDir = path.join(
       MemorySystem.rootFor(this.projectRoot),
       "plugins",
-      pluginId
+      assertSafeId(pluginId, "plugin id")
     );
     try {
       const { rm } = await import("node:fs/promises");

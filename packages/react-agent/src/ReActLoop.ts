@@ -74,6 +74,7 @@ export class ReActLoop {
     const providerCfg = resolveProvider({
       provider: config.settings.provider,
       model: config.settings.model,
+      env: process.env,
     });
     this.engine = new QueryEngine(providerCfg);
   }
@@ -136,6 +137,8 @@ export class ReActLoop {
             const ctx: ToolContext = {
               workingDirectory: this.config.projectRoot,
               settings: this.config.settings,
+              permissionLevel: this.config.settings.permissionLevel,
+              requestApproval: async () => false,
               tools: this.config.tools,
             };
             const result = await tool.execute(step.actionInput ?? {}, ctx);

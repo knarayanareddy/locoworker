@@ -1,5 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { writePrivateFile } from "../utils/secureFile.js";
 import type { MemoryEntry } from "./MemoryTypes.js";
 
 /**
@@ -55,7 +56,7 @@ export class MemoryIndex {
     if (lines.length > MemoryIndex.MAX_LINES) {
       lines.length = MemoryIndex.MAX_LINES;
     }
-    await writeFile(this.path, lines.join("\n"), "utf8");
+    await writePrivateFile(this.path, lines.join("\n"));
   }
 }
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Zap, Brain, Activity, DollarSign, GitCommit, Shield, ArrowUpRight, TrendingUp } from 'lucide-react';
+import { Zap, Brain, Activity, DollarSign, Shield, ArrowUpRight, TrendingUp } from 'lucide-react';
 import { TOKEN_USAGE_DATA, AGENTS, SESSIONS } from '../data/mockData';
 
 const COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444'];
@@ -67,7 +67,7 @@ export default function Dashboard() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-bold text-white">Command Center</h1>
+        <h1 className="text-2xl font-bold text-white">Command Center{loading ? " · syncing…" : ""}</h1>
         <p className="text-sm text-gray-400 mt-1">Real-time overview of all CoWork AI systems and agents</p>
       </div>
 

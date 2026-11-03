@@ -1,17 +1,14 @@
-export { GatewayServer } from "./GatewayServer";
-export { CoworkGateway } from "./CoworkGateway";
-export { RateLimiter } from "./RateLimiter";
-export { BaseChannel } from "./channels/BaseChannel";
-export { TelegramChannel } from "./channels/TelegramChannel";
-export { WebhookChannel } from "./channels/WebhookChannel";
-export { HttpChannel } from "./channels/HttpChannel";
+/** Canonical OpenClaw surface. Legacy channel-based classes were consolidated. */
+export { GatewayServer } from "./gateway/GatewayServer.js";
+export { RateLimiter } from "./gateway/RateLimiter.js";
+export { CoworkGateway } from "./CoworkGateway.js";
+export { TelegramBot } from "./telegram/TelegramBot.js";
+export type { CoworkGatewayConfig } from "./CoworkGateway.js";
 export type {
   GatewayConfig,
-  CoworkGatewayConfig,
-  ChannelConfig,
-  ChannelType,
   InboundMessage,
   OutboundMessage,
-  MessageAttachment,
-  RateLimitState,
-} from "./types";
+  MessageChannel,
+  MessageStatus,
+  MessageHandler,
+} from "./gateway/types.js";

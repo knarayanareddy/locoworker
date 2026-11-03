@@ -1,3 +1,4 @@
+import { PermissionLevel } from "@cowork/core";
 import type { ToolDefinition, ToolContext } from "@cowork/core";
 import { ReActLoop } from "./ReActLoop";
 
@@ -18,7 +19,7 @@ export const ReActRun: ToolDefinition = {
     },
     required: ["task"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { task: string; maxSteps?: number }, ctx: ToolContext) {
     const loop = new ReActLoop({
       settings: ctx.settings!,

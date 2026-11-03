@@ -2,9 +2,11 @@
 
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readFile, writeFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { getCoworkHome } from "../state/Settings.js";
+import { assertSafeId } from "../utils/safeId.js";
+import { ensurePrivateDir, writePrivateFile } from "../utils/secureFile.js";
 import type {
   SessionRecord,
   CreateSessionOptions,
@@ -21,11 +23,11 @@ export class SessionManager {
   }
 
   async init(): Promise<void> {
-    await mkdir(this.sessionsDir, { recursive: true });
+    await ensurePrivateDir(this.sessionsDir);
   }
 
   private sessionPath(id: string): string {
-    return join(this.sessionsDir, `${id}.json`);
+    return join(this.sessionsDir, `${assertSafeId(id, "session id")}.json`);
   }
 
   async create(options: CreateSessionOptions): Promise<SessionRecord> {
@@ -117,10 +119,6 @@ export class SessionManager {
   }
 
   private async save(record: SessionRecord): Promise<void> {
-    await writeFile(
-      this.sessionPath(record.id),
-      JSON.stringify(record, null, 2),
-      "utf-8"
-    );
+    await writePrivateFile(this.sessionPath(record.id), JSON.stringify(record, null, 2));
   }
 }

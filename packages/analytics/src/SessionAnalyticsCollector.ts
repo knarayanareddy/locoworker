@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, writeFile } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile, assertSafeId } from "@cowork/core";
 import type { SessionAnalytics, TurnStat } from "./types.js";
 
 /**
@@ -37,7 +37,7 @@ export class SessionAnalyticsCollector {
   }
 
   async init(): Promise<void> {
-    await mkdir(this.analyticsDir, { recursive: true });
+    await ensurePrivateDir(this.analyticsDir);
   }
 
   recordTurn(turn: TurnStat): void {
@@ -80,8 +80,8 @@ export class SessionAnalyticsCollector {
   }
 
   async persist(): Promise<void> {
-    const path = join(this.analyticsDir, `${this.data.sessionId}.json`);
-    await writeFile(path, JSON.stringify(this.data, null, 2), "utf-8");
+    const path = join(this.analyticsDir, `${assertSafeId(this.data.sessionId, "session id")}.json`);
+    await writePrivateFile(path, JSON.stringify(this.data, null, 2));
   }
 
   getSnapshot(): SessionAnalytics {

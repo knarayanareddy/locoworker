@@ -8,21 +8,22 @@
     "apps/*"
   ],
   "scripts": {
-    "typecheck":      "tsc -b",
-    "cowork":         "bun run apps/cowork-cli/src/index.ts",
-    "kairos":         "bun run apps/kairos-daemon/src/index.ts",
-    "hermes":         "bun run packages/hermes/src/start.ts",
-    "hermes:stdio":   "COWORK_HERMES_TRANSPORT=stdio bun run packages/hermes/src/start.ts",
-    "hermes:sse":     "COWORK_HERMES_TRANSPORT=sse bun run packages/hermes/src/start.ts",
-    "eval":           "bun run packages/core/src/eval/run.ts",
-    "build:graph":    "bun run scripts/build-graph.ts",
-    "dev":            "bun run cowork",
+    "typecheck": "tsc -b && tsc -p apps/dashboard-frontend --noEmit && tsc -p apps/desktop --noEmit",
+    "cowork": "bun run apps/cowork-cli/src/index.ts",
+    "kairos": "bun run apps/kairos-daemon/src/index.ts",
+    "hermes": "bun run packages/hermes/src/start.ts",
+    "hermes:stdio": "COWORK_HERMES_TRANSPORT=stdio bun run packages/hermes/src/start.ts",
+    "hermes:sse": "COWORK_HERMES_TRANSPORT=sse bun run packages/hermes/src/start.ts",
+    "eval": "bun run packages/eval/src/bin.ts",
+    "build:graph": "bun run scripts/build-graph.ts",
+    "dev": "bun run cowork",
     "dashboard": "bun run apps/dashboard/src/server.ts",
     "test": "bun test",
-    "build:all": "bun run --filter='*' build"
+    "build:all": "tsc -b",
+    "eval:custom": "bun run packages/core/src/eval/run.ts"
   },
   "devDependencies": {
-    "typescript": "^5.5.4",
+    "typescript": "^5.9.3",
     "@types/node": "^22.5.0",
     "@types/bun": "^1.1.0",
     "@cowork/core": "workspace:*",
@@ -40,6 +41,6 @@
     "@cowork/analytics": "workspace:*"
   },
   "engines": {
-    "bun": ">=1.1.0"
+    "bun": ">=1.2.0"
   }
 }

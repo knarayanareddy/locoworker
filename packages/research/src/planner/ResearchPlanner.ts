@@ -20,7 +20,7 @@ DEPENDS_ON: <comma-separated step numbers, or "none">
 Be thorough but efficient. Typical plans have 4-8 steps.`;
 
 export class ResearchPlanner {
-  constructor(private engine: QueryEngine) {}
+  constructor(private engine: QueryEngine, private policy?: import("@cowork/core").AgentPolicy) {}
 
   async plan(question: string): Promise<ResearchPlan> {
     let rawOutput = "";
@@ -34,9 +34,10 @@ export class ResearchPlanner {
           tools: [],
           maxTurns: 1,
           maxTokens: 2000,
+          policy: this.policy,
         }
       )) {
-        if (event.type === "text") rawOutput += event.text;
+        if (event.type === "complete") rawOutput = event.text;
       }
     } catch {
       return this.fallbackPlan(question);

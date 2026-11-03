@@ -1,3 +1,4 @@
+import { PermissionLevel } from "@cowork/core";
 import type { ToolDefinition, ToolContext } from "@cowork/core";
 import { MarketplaceClient } from "./MarketplaceClient";
 
@@ -15,7 +16,7 @@ export const MarketplaceSearch: ToolDefinition = {
     },
     required: [],
   },
-  permissionLevel: "READ_ONLY",
+  permissionLevel: PermissionLevel.READ_ONLY,
   async execute(input: { query?: string; tags?: string[]; limit?: number }, ctx: ToolContext) {
     const client = new MarketplaceClient(ctx.workingDirectory);
     const plugins = await client.list({
@@ -43,7 +44,7 @@ export const MarketplaceInstall: ToolDefinition = {
     },
     required: ["pluginId"],
   },
-  permissionLevel: "ELEVATED",
+  permissionLevel: PermissionLevel.ELEVATED,
   requiresApproval: true,
   async execute(input: { pluginId: string }, ctx: ToolContext) {
     const client = new MarketplaceClient(ctx.workingDirectory);

@@ -1,5 +1,5 @@
 import { readFile, stat } from "node:fs/promises";
-import { resolve } from "node:path";
+import { guardPath } from "./pathGuard.js";
 import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 
@@ -29,7 +29,9 @@ export const ReadFileTool: ToolDefinition<ReadInput> = {
   },
 
   async execute(input: ReadInput, ctx: ExecutionContext): Promise<ToolResult> {
-    const fullPath = resolve(ctx.workingDirectory, input.path);
+        const guarded = await guardPath(ctx.workingDirectory, input.path);
+    if (guarded.error) return err(guarded.error);
+    const fullPath = guarded.path!;
 
     let info;
     try {

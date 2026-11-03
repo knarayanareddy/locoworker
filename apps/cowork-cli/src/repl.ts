@@ -1,20 +1,21 @@
 import * as readline from "node:readline";
-import { readFile, appendFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { dirname } from "node:path";
+import { queryLoop, defaultRegistry, getCoworkHome, ensurePrivateDir, appendPrivateFile } from "@cowork/core";
+import type { Message, ResolvedSettings } from "@cowork/core";
 import { join } from "node:path";
-import { homedir } from "node:os";
-import { queryLoop, defaultRegistry, type ResolvedSettings } from "@cowork/core";
 import { renderEvent } from "./render.js";
 import type { SessionRuntime } from "./session.js";
 
-const HISTORY_PATH = join(homedir(), ".cowork", "repl-history.txt");
+const HISTORY_PATH = join(getCoworkHome(), "repl-history.txt");
 const MAX_HISTORY = 1000;
+const MAX_CONTEXT_MESSAGES = 40;
 
 export async function runRepl(
   settings: ResolvedSettings,
   opts: { yes: boolean; json: boolean },
   runtime: SessionRuntime
 ): Promise<void> {
-  // Load history
   let history: string[] = [];
   try {
     const raw = await readFile(HISTORY_PATH, "utf-8");
@@ -33,84 +34,86 @@ export async function runRepl(
     prompt: buildPrompt(settings),
   });
 
-  // Banner
-  const banner = [
+  process.stdout.write([
     ``,
     `  ╔═══════════════════════════════════════╗`,
-    `  ║      locoworker  (Phase 6 REPL)       ║`,
+    `  ║            locoworker REPL             ║`,
     `  ╚═══════════════════════════════════════╝`,
     ``,
     `  Provider : ${settings.provider}`,
     `  Model    : ${settings.model ?? "default"}`,
     `  Mode     : ${settings.permissionMode}`,
-    `  Session  : ${runtime.sessionId}`,
+    `  Session  : ${runtime.sessionId}${runtime.resumeHistory.length ? " (resumed)" : ""}`,
     `  CWD      : ${settings.workingDirectory}`,
+    `  Tools    : ${runtime.tools.length}`,
     ``,
     `  Type /help for commands. Ctrl+C or /exit to quit.`,
     ``,
-  ].join("\n");
-  process.stdout.write(banner);
+  ].join("\n"));
 
   const registry = defaultRegistry();
+  // Conversation context is kept in-process, seeded by --resume.
+  let messages: Message[] = [...runtime.resumeHistory];
 
   async function runTurn(input: string): Promise<void> {
+    const userMessage: Message = { role: "user", content: input };
+    await runtime.memory.appendTranscript(runtime.sessionId, [userMessage]);
+    messages.push(userMessage);
+    const turnHistory: Message[] = messages.slice(-MAX_CONTEXT_MESSAGES);
+
     let assistantBuffer = "";
-
-    await runtime.memory.appendTranscript(runtime.sessionId, [
-      { role: "user", content: input },
-    ]);
-
     for await (const event of queryLoop(input, {
       engine: runtime.engine,
       systemPrompt: runtime.systemPrompt,
       tools: runtime.tools,
-      maxTokens: settings.maxTokens,
-      maxTurns: settings.maxTurns,
       compressor: runtime.compressor,
-      requestApproval: async (toolName, toolInput) => {
-        return new Promise((resolve) => {
-          if (opts.yes) return resolve(true);
-          const summary = JSON.stringify(toolInput).slice(0, 120);
-          rl.question(
-            `\n  ⚠  Allow "${toolName}" (${summary})? [y/N] `,
-            (answer) => resolve(answer.trim().toLowerCase() === "y")
-          );
-        });
-      },
+      history: turnHistory,
       hooks: runtime.hooks,
-      sessionId: runtime.sessionId,
-      workingDirectory: settings.workingDirectory,
+      // Inherit permissions, approval callback, settings, cwd and limits.
+      policy: runtime.policy,
+      requestApproval: opts.yes ? async () => true : runtime.requestApproval,
     })) {
       renderEvent(event, { json: opts.json });
-      if (event.type === "text") assistantBuffer += event.text;
+      if (event.type === "complete") assistantBuffer = event.text;
     }
 
     if (assistantBuffer) {
-      await runtime.memory.appendTranscript(runtime.sessionId, [
-        { role: "assistant", content: assistantBuffer },
-      ]);
+      const assistantMessage: Message = { role: "assistant", content: assistantBuffer };
+      await runtime.memory.appendTranscript(runtime.sessionId, [assistantMessage]);
+      messages.push(assistantMessage);
     }
-
-    // Refresh system prompt (picks up any MEMORY.md changes from this turn)
     runtime.systemPrompt = await runtime.refreshSystemPrompt();
   }
+
+  const makeContext = () => ({
+    memory: runtime.memory,
+    engine: runtime.engine,
+    compressor: runtime.compressor,
+    sessionId: runtime.sessionId,
+    workingDirectory: settings.workingDirectory,
+    settings,
+    policy: runtime.policy,
+    hooks: runtime.hooks,
+    runTurn,
+    skills: runtime.skills,
+    sessionManager: runtime.sessionManager,
+    print: (msg: string) => process.stdout.write(msg + "\n"),
+  });
 
   rl.prompt();
 
   rl.on("line", async (rawLine) => {
     rl.pause();
     const line = rawLine.trim();
-
     if (!line) {
       rl.prompt();
       rl.resume();
       return;
     }
 
-    // Persist to history file
-    await appendFile(HISTORY_PATH, line + "\n", "utf-8").catch(() => {});
+    await ensurePrivateDir(dirname(HISTORY_PATH)).catch(() => {});
+    await appendPrivateFile(HISTORY_PATH, line + "\n").catch(() => {});
 
-    // Multi-line input: lines ending with \ continue
     if (line.endsWith("\\")) {
       process.stdout.write("  > ");
       rl.resume();
@@ -119,28 +122,13 @@ export async function runRepl(
 
     try {
       if (line.startsWith("/")) {
-        // Slash command
-        const [cmdName, ...rest] = line.slice(1).split(" ");
-        const ctx = {
-          memory: runtime.memory,
-          engine: runtime.engine,
-          compressor: runtime.compressor,
-          sessionId: runtime.sessionId,
-          workingDirectory: settings.workingDirectory,
-          runTurn,
-          skills: runtime.skills,
-          sessionManager: runtime.sessionManager,
-          print: (msg: string) => process.stdout.write(msg + "\n"),
-        };
-
-        await registry.dispatch(line, ctx);
+        await registry.dispatch(line, makeContext());
+        if (line === "/clear") messages = [];
       } else {
         await runTurn(line);
       }
     } catch (err) {
-      process.stdout.write(
-        `\n  Error: ${err instanceof Error ? err.message : String(err)}\n\n`
-      );
+      process.stdout.write(`\n  Error: ${err instanceof Error ? err.message : String(err)}\n\n`);
     }
 
     rl.setPrompt(buildPrompt(settings));
@@ -150,11 +138,7 @@ export async function runRepl(
 
   rl.on("close", () => {
     process.stdout.write("\n  Goodbye.\n\n");
-    // Disconnect MCP clients
-    for (const client of runtime.mcpClients) {
-      client.disconnect().catch(() => {});
-    }
-    process.exit(0);
+    void runtime.shutdown().finally(() => process.exit(0));
   });
 
   rl.on("SIGINT", () => {

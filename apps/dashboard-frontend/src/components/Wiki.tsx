@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { BookOpen, Search, Plus, Network, ArrowRight, RefreshCw, CheckCircle } from 'lucide-react';
+import { Search, Plus, Network, ArrowRight, RefreshCw, CheckCircle } from 'lucide-react';
 import { WIKI_NODES } from '../data/mockData';
 
 const TYPE_COLORS: Record<string, string> = {

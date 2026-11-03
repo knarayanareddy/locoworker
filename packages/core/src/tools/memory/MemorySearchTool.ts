@@ -40,7 +40,8 @@ export function makeMemorySearchTool(memory: MemorySystem): ToolDefinition<Searc
       }
       const formatted = results
         .map((r) => {
-          return `── ${r.type}/${r.id}\n${r.name}\n${r.description}\n\n${r.body.slice(0, 1200)}`;
+          const e = r.entry;
+          return `── ${e.type}/${e.id}\n${e.name}\n${e.description}\n\n${e.body.slice(0, 1200)} (score=${r.score.toFixed(3)}, via ${r.via.join("+")})`;
         })
         .join("\n\n");
       return ok(formatted);

@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
+import { isAbsolute, relative, resolve } from "node:path";
 import { type ToolDefinition, type ExecutionContext, type ToolResult, ok, err } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
+import { filterEnv } from "@cowork/security/env";
 import { checkBashCommand } from "./BashSecurity.js";
 
 type BashInput = {
@@ -12,11 +14,24 @@ type BashInput = {
 const DEFAULT_TIMEOUT_MS = 30_000;
 const MAX_OUTPUT_BYTES = 256 * 1024;
 
+/** Resolve `cwd` inside the project root. Absolute paths outside it are rejected. */
+export function resolveWorkingDirectory(root: string, requested?: string): string {
+  if (!requested) return root;
+  const candidate = resolve(root, requested);
+  const rel = relative(root, candidate);
+  if (rel.startsWith("..") || isAbsolute(rel)) {
+    throw new Error(`cwd must stay inside the project root: ${requested}`);
+  }
+  return candidate;
+}
+
 export const BashTool: ToolDefinition<BashInput> = {
   name: "Bash",
   description:
-    "Execute a shell command. Output is truncated at ~256KB. Long-running commands are killed at the timeout. Use for: running tests, git commands, build tools.",
+    "Execute a shell command. Requires explicit user approval. Output is truncated at ~256KB. Long-running commands are killed at the timeout. Use for: running tests, git commands, build tools.",
   permissionLevel: PermissionLevel.STANDARD,
+  // Shell execution is powerful: always ask, even when the session level is high.
+  requiresApproval: true,
   inputSchema: {
     type: "object",
     properties: {
@@ -38,35 +53,51 @@ export const BashTool: ToolDefinition<BashInput> = {
     }
 
     const timeout = clamp(input.timeout ?? DEFAULT_TIMEOUT_MS, 1_000, 600_000);
-    const cwd = input.cwd ?? ctx.workingDirectory;
+    let cwd: string;
+    try {
+      cwd = resolveWorkingDirectory(ctx.workingDirectory, input.cwd);
+    } catch (e) {
+      return err(`Invalid cwd: ${(e as Error).message}`);
+    }
 
-    return await new Promise<ToolResult>((resolve) => {
-      const isDocker = ctx.settings?.sandboxMode === "docker";
-      const bin = isDocker ? "docker" : "/bin/bash";
-      const args = isDocker
+    const mode = ctx.settings?.sandboxMode ?? "none";
+    if (mode !== "none" && mode !== "docker" && mode !== "podman") {
+      return err(`Unknown sandboxMode "${String(mode)}"; refusing to run unsandboxed`);
+    }
+    // Credentials never reach child processes.
+    const env = filterEnv(process.env);
+
+    return await new Promise<ToolResult>((resolvePromise) => {
+      const isContainer = mode !== "none";
+      const bin = isContainer ? mode : "/bin/bash";
+      const args = isContainer
         ? [
-            "run",
-            "--rm",
-            "-v",
-            `${cwd}:/workspace`,
-            "-w",
-            "/workspace",
+            "run", "--rm",
+            "--network", "none",
+            "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges",
+            "--pids-limit", "256",
+            "--memory", "1g",
+            "--read-only",
+            "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",
+            "-v", `${cwd}:/workspace:rw`,
+            "-w", "/workspace",
             "ubuntu:latest",
-            "/bin/bash",
-            "-c",
-            input.command,
+            "/bin/bash", "-c", input.command,
           ]
         : ["-c", input.command];
 
       const child = spawn(bin, args, {
-        cwd: isDocker ? undefined : cwd,
-        env: isDocker ? undefined : process.env,
+        cwd: isContainer ? undefined : cwd,
+        env: isContainer ? undefined : env,
+        detached: true,
       });
 
       let stdout = "";
       let stderr = "";
       let truncated = false;
       let bytes = 0;
+      let settled = false;
 
       const append = (chunk: Buffer, target: "stdout" | "stderr") => {
         if (truncated) return;
@@ -82,30 +113,39 @@ export const BashTool: ToolDefinition<BashInput> = {
       child.stdout.on("data", (c: Buffer) => append(c, "stdout"));
       child.stderr.on("data", (c: Buffer) => append(c, "stderr"));
 
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-      }, timeout);
+      const killTree = () => {
+        try {
+          // Detached processes get their own process group: kill the whole tree.
+          if (child.pid) process.kill(-child.pid, "SIGKILL");
+        } catch {
+          child.kill("SIGKILL");
+        }
+      };
 
-      const onAbort = () => child.kill("SIGKILL");
+      const timer = setTimeout(killTree, timeout);
+      const onAbort = () => killTree();
       ctx.abortSignal?.addEventListener("abort", onAbort, { once: true });
 
-      child.on("close", (code, signal) => {
+      const finish = (result: ToolResult) => {
+        if (settled) return;
+        settled = true;
         clearTimeout(timer);
         ctx.abortSignal?.removeEventListener("abort", onAbort);
+        resolvePromise(result);
+      };
 
+      child.on("close", (code, signal) => {
         const parts: string[] = [];
         if (stdout) parts.push(`<stdout>\n${stdout}\n</stdout>`);
         if (stderr) parts.push(`<stderr>\n${stderr}\n</stderr>`);
         if (truncated) parts.push(`[output truncated at ${MAX_OUTPUT_BYTES} bytes]`);
         parts.push(`<exit>${signal ?? code ?? 0}</exit>`);
-
         const failed = (code ?? 0) !== 0 || signal !== null;
-        resolve({ content: parts.join("\n"), isError: failed });
+        finish({ content: parts.join("\n"), isError: failed });
       });
 
       child.on("error", (e) => {
-        clearTimeout(timer);
-        resolve(err(`Failed to spawn bash: ${e.message}`));
+        finish(err(`Failed to spawn bash: ${e.message}`));
       });
     });
   },

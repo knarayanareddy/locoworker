@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "electron .",
-    "build": "electron-builder --mac --win --linux",
-    "typecheck": "tsc --noEmit"
+    "dev": "tsc -p tsconfig.json && electron .",
+    "build": "tsc -p tsconfig.json && electron-builder --mac --win --linux",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "main": "src/main.js",
+  "main": "dist/main.js",
   "dependencies": {
     "@cowork/core": "workspace:*"
   },

@@ -8,7 +8,7 @@ Synthesize research findings into a clear, well-structured report.
 Use markdown. Include: Executive Summary, Key Findings, Analysis, Conclusions, and Limitations.`;
 
 export class ResearchReporter {
-  constructor(private engine: QueryEngine, private wikiStore?: WikiStore) {}
+  constructor(private engine: QueryEngine, private wikiStore?: WikiStore, private policy?: import("@cowork/core").AgentPolicy) {}
 
   async generateReport(session: ResearchSession): Promise<string> {
     const stepsText = session.plan.steps
@@ -41,8 +41,9 @@ export class ResearchReporter {
         tools: [],
         maxTurns: 1,
         maxTokens: 3000,
+        policy: this.policy,
       })) {
-        if (event.type === "text") report += event.text;
+        if (event.type === "complete") report = event.text;
       }
     } catch {
       report = this.fallbackReport(session);

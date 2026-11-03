@@ -39,7 +39,7 @@ export class MemoryGraph {
   // ── Build from memory entries ──────────────────────────────────────────────
 
   static async build(projectRoot: string): Promise<MemoryGraph> {
-    const memory = new MemorySystem(projectRoot);
+    const memory = new MemorySystem({ projectRoot });
     const entries = await memory.list();
     return MemoryGraph.fromEntries(entries);
   }

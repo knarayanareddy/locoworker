@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { ScheduledTask, TaskKind } from "./types.js";
@@ -21,7 +22,7 @@ export class TaskScheduler {
   }
 
   async init(): Promise<void> {
-    await mkdir(join(homedir(), ".cowork", "kairos"), { recursive: true });
+    await ensurePrivateDir(join(homedir(), ".cowork", "kairos"));
     await this.load();
   }
 
@@ -142,6 +143,6 @@ export class TaskScheduler {
 
   private async save(): Promise<void> {
     const data = JSON.stringify([...this.tasks.values()], null, 2);
-    await writeFile(this.storagePath, data, "utf-8");
+    await writePrivateFile(this.storagePath, data);
   }
 }

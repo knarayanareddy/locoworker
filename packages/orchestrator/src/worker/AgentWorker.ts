@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { queryLoop } from "@cowork/core";
-import type { QueryEngine, ToolDefinition } from "@cowork/core";
+import type { QueryEngine, ToolDefinition, AgentPolicy } from "@cowork/core";
 import type { OrchestratorTask } from "../queue/types.js";
 
 export type WorkerStatus = "idle" | "busy" | "error" | "stopped";
@@ -11,6 +11,8 @@ export interface WorkerConfig {
   tools: ToolDefinition[];
   defaultSystemPrompt: string;
   maxConcurrentTasks?: number;
+  /** Inherited caller policy. */
+  policy?: AgentPolicy;
 }
 
 export interface WorkerResult {
@@ -72,9 +74,9 @@ export class AgentWorker {
         systemPrompt: task.systemPrompt ?? this.config.defaultSystemPrompt,
         tools,
         maxTurns: task.maxTurns ?? 20,
-        requestApproval: async () => true,
+        policy: this.config.policy,
       })) {
-        if (event.type === "text") output += event.text;
+        if (event.type === "complete") output = event.text;
         if (event.type === "turn_start") turns++;
         if (event.type === "complete") {
           inputTokens = event.usage?.inputTokens ?? 0;

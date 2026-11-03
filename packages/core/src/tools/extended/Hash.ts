@@ -2,6 +2,7 @@ import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 import { createHash } from "node:crypto";
 import path from "path";
+import { guardPath } from "../files/pathGuard.js";
 
 export const HashFile: ToolDefinition = {
   name: "HashFile",
@@ -21,8 +22,9 @@ export const HashFile: ToolDefinition = {
     if (input.text) {
       data = input.text;
     } else if (input.filePath) {
-      const p = path.resolve(ctx.workingDirectory, input.filePath);
-      data = await Bun.file(p).text();
+      const guarded = await guardPath(ctx.workingDirectory, input.filePath);
+      if (guarded.error) return { content: guarded.error, isError: true };
+      data = await Bun.file(guarded.path!).text();
     } else {
       return { content: "Provide filePath or text", isError: true };
     }

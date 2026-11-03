@@ -5,9 +5,8 @@
  * Complements the existing flat MemorySystem with temporal + causal structure.
  */
 
-import { MemorySystem } from "@cowork/core";
+import { MemorySystem, ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import path from "path";
-import mkdir from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { Glob } from "bun";
 
@@ -51,8 +50,7 @@ export class EpisodicMemory {
   // ── Write ──────────────────────────────────────────────────────────────────
 
   async record(episode: Omit<Episode, "id" | "ts">): Promise<Episode> {
-    // @ts-ignore
-    await mkdir(this.episodesDir, { recursive: true });
+    await ensurePrivateDir(this.episodesDir);
     const full: Episode = {
       id: randomUUID(),
       ts: new Date().toISOString(),
@@ -60,7 +58,7 @@ export class EpisodicMemory {
     };
 
     const filename = `${full.ts.replace(/[:T]/g, "-").slice(0, 19)}-${full.type}-${full.id.slice(0, 8)}.json`;
-    await Bun.write(
+    await writePrivateFile(
       path.join(this.episodesDir, filename),
       JSON.stringify(full, null, 2)
     );

@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "../../Tool.js";
 import { PermissionLevel } from "../../permissions/PermissionLevel.js";
 import path from "path";
+import { guardPath } from "../files/pathGuard.js";
 
 export const DiffApply: ToolDefinition = {
   name: "DiffApply",
@@ -15,7 +16,9 @@ export const DiffApply: ToolDefinition = {
   },
   permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { filePath: string; diff: string }, ctx) {
-    const absPath = path.resolve(ctx.workingDirectory, input.filePath);
+    const guarded = await guardPath(ctx.workingDirectory, input.filePath);
+    if (guarded.error) return { content: guarded.error, isError: true };
+    const absPath = guarded.path!;
     try {
       const content = await Bun.file(absPath).text();
       // Very simple diff applier (placeholder logic, actual diff apply is complex)

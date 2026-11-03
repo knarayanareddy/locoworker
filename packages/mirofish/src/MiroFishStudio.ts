@@ -29,7 +29,7 @@ export class MiroFishStudio {
     simConfig: SimulationConfig,
     onProgress?: (round: number, actionCount: number) => void
   ): Promise<SimulationReport> {
-    await mkdir(this.studioConfig.outputDir!, { recursive: true });
+    await mkdir(this.studioConfig.outputDir!, { recursive: true, mode: 0o700 });
 
     const engine = new SimulationEngine(simConfig);
     const state = await engine.run((round, actions) => {

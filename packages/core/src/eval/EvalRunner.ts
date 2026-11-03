@@ -2,12 +2,16 @@ import type { EvalCase, EvalResult, EvalSuiteResult } from "./types.js";
 import type { QueryEngine } from "../QueryEngine.js";
 import type { ToolDefinition } from "../Tool.js";
 import { queryLoop } from "../queryLoop.js";
+import type { AgentPolicy } from "../policy/AgentPolicy.js";
+import { PermissionLevel } from "../permissions/PermissionLevel.js";
 
 export class EvalRunner {
   constructor(
     private engine: QueryEngine,
     private tools: ToolDefinition[],
-    private systemPrompt: string
+    private systemPrompt: string,
+    /** Evals must explicitly opt in to tool use; default policy denies it. */
+    private policy?: AgentPolicy,
   ) {}
 
   async runCase(evalCase: EvalCase): Promise<EvalResult> {
@@ -23,7 +27,7 @@ export class EvalRunner {
         systemPrompt: evalCase.systemPrompt ?? this.systemPrompt,
         tools: this.tools,
         maxTurns: evalCase.maxTurns ?? 10,
-        requestApproval: async () => true, // Auto-approve in eval
+        policy: this.policy ?? { permissionLevel: PermissionLevel.READ_ONLY, requestApproval: async () => false },
       })) {
         // Log event for debugging
         // console.error(`[EVAL DEBUG] Event: ${event.type}`, event);

@@ -3,7 +3,8 @@
  * Usage: bun run packages/core/src/eval/run.ts [--dir .cowork/evals] [--provider anthropic] [--model claude-sonnet-4-5]
  */
 import { join, resolve } from "node:path";
-import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "../utils/secureFile.js";
 import { existsSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { resolveProvider, resolveSettings, DEFAULT_TOOLS } from "../index.js";
@@ -46,7 +47,7 @@ const provider = resolveProvider({
 const engine = new QueryEngine(provider);
 const runner = new EvalRunner(engine, DEFAULT_TOOLS, settings.systemPrompt ?? "");
 
-await mkdir(outputDir, { recursive: true });
+await ensurePrivateDir(outputDir);
 
 // Discover eval suite files
 const files = (await readdir(evalsDir)).filter(
@@ -88,7 +89,7 @@ for (const file of files) {
 
   // Persist results
   const outPath = join(outputDir, `${suiteName}-${Date.now()}.json`);
-  await writeFile(outPath, JSON.stringify(result, null, 2), "utf-8");
+  await writePrivateFile(outPath, JSON.stringify(result, null, 2));
 
   const passRate = (result.passRate * 100).toFixed(1);
   console.log(`  Pass rate: ${passRate}% (${result.passed}/${result.totalCases})`);

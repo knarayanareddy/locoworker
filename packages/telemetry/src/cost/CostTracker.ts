@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import { existsSync } from "node:fs";
 import { calculateCost, formatCost } from "./pricing.js";
 
@@ -33,7 +34,7 @@ export class CostTracker {
   }
 
   async init(): Promise<void> {
-    await mkdir(join(homedir(), ".cowork"), { recursive: true });
+    await ensurePrivateDir(join(homedir(), ".cowork"));
   }
 
   async record(record: CostRecord): Promise<void> {
@@ -42,7 +43,7 @@ export class CostTracker {
       const existing = existsSync(this.ledgerPath)
         ? await readFile(this.ledgerPath, "utf-8")
         : "";
-      await writeFile(this.ledgerPath, existing + line, "utf-8");
+      await writePrivateFile(this.ledgerPath, existing + line);
     } catch {
       // never throw on telemetry failure
     }

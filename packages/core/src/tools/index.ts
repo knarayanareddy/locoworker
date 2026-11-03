@@ -21,6 +21,8 @@ export function buildToolMap(tools: ToolDefinition[]): Map<string, ToolDefinitio
 
 export * from "./memory/index.js";
 
+export { guardPath, resolveInside, PathEscapeError } from "./files/pathGuard.js";
+
 export {
   BashTool,
   ReadFileTool,
@@ -29,3 +31,6 @@ export {
   GlobTool,
   GrepTool,
 };
+
+export { validateToolInput } from "./validateToolInput.js";
+export type { ToolInputValidation } from "./validateToolInput.js";

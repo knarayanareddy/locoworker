@@ -1,3 +1,4 @@
+import { PermissionLevel } from "@cowork/core";
 import type { ToolDefinition, ToolContext } from "@cowork/core";
 
 export const VoiceTranscribe: ToolDefinition = {
@@ -20,7 +21,7 @@ export const VoiceTranscribe: ToolDefinition = {
     },
     required: ["filePath"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(input: { filePath: string; language?: string }, ctx: ToolContext) {
     const { STTClient } = await import("./STTClient");
     const provider = (process.env.COWORK_STT_PROVIDER as any) ?? "openai-whisper";
@@ -67,7 +68,7 @@ export const VoiceSynthesize: ToolDefinition = {
     },
     required: ["text"],
   },
-  permissionLevel: "STANDARD",
+  permissionLevel: PermissionLevel.STANDARD,
   async execute(
     input: { text: string; outputFile?: string; voice?: string },
     ctx: ToolContext

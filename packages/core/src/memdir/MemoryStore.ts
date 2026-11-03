@@ -1,4 +1,6 @@
-import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { readdir, readFile, stat, unlink } from "node:fs/promises";
+import { assertSafeId } from "../utils/safeId.js";
+import { ensurePrivateDir, writePrivateFile } from "../utils/secureFile.js";
 import { join } from "node:path";
 import {
   type MemoryDraft,
@@ -25,9 +27,9 @@ export class MemoryStore {
   constructor(private readonly root: string) {}
 
   async init(): Promise<void> {
-    await mkdir(this.root, { recursive: true });
+    await ensurePrivateDir(this.root);
     for (const t of MEMORY_TYPES) {
-      await mkdir(join(this.root, t), { recursive: true });
+      await ensurePrivateDir(join(this.root, t));
     }
   }
 
@@ -54,7 +56,7 @@ export class MemoryStore {
     };
 
     const path = this.pathFor(entry.type, entry.id);
-    await writeFile(path, formatEntry(entry), "utf8");
+    await writePrivateFile(path, formatEntry(entry));
     return entry;
   }
 
@@ -102,7 +104,7 @@ export class MemoryStore {
   }
 
   pathFor(type: MemoryType, id: string): string {
-    return join(this.root, type, `${id}.md`);
+    return join(this.root, type, `${assertSafeId(id, "memory id")}.md`);
   }
 
   get rootPath(): string {

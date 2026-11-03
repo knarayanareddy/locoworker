@@ -2,7 +2,15 @@
   "name": "@cowork/plugins",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@cowork/core": "workspace:*" },
-  "devDependencies": { "typescript": "^5.4.0", "@types/bun": "latest" }
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@cowork/core": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "latest"
+  },
+  "main": "./src/index.ts"
 }

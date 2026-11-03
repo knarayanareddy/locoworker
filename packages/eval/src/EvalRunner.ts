@@ -7,9 +7,13 @@ import type {
   AssertionResult,
   Assertion,
 } from "./types";
-import { queryLoop, resolveSettings, DEFAULT_TOOLS, type AgentEvent } from "@cowork/core";
+import {
+  queryLoop, resolveSettings, resolveProvider, QueryEngine,
+  DEFAULT_TOOLS, PermissionLevel, type AgentEvent,
+} from "@cowork/core";
 import { estimateCost } from "@cowork/analytics";
 import { mkdir, rm } from "node:fs/promises";
+import { resolve as resolvePath, relative } from "node:path";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
@@ -58,13 +62,17 @@ export class EvalRunner {
 
     // Create isolated temp workspace
     const tmpDir = path.join(tmpdir(), `cowork-eval-${randomUUID()}`);
-    await mkdir(tmpDir, { recursive: true });
+    await mkdir(tmpDir, { recursive: true, mode: 0o700 });
 
     // Write context files to temp dir
     if (evalCase.contextFiles) {
       for (const [filename, content] of Object.entries(evalCase.contextFiles)) {
-        const filePath = path.join(tmpDir, filename);
-        await mkdir(path.dirname(filePath), { recursive: true });
+        const filePath = resolvePath(tmpDir, filename);
+        const rel = relative(tmpDir, filePath);
+        if (rel.startsWith("..") || resolvePath(rel) === rel) {
+          throw new Error(`contextFiles path escapes the workspace: ${filename}`);
+        }
+        await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
         await Bun.write(filePath, content);
       }
     }
@@ -105,9 +113,17 @@ export class EvalRunner {
 
   private async executeCase(evalCase: EvalCase, workingDir: string): Promise<EvalOutput> {
     const settings = await resolveSettings(workingDir, process.env, {
-      provider: this.suite.provider ?? "ollama",
+      provider: (this.suite.provider ?? "ollama") as import("@cowork/core").Settings["provider"],
       model: this.suite.model ?? "qwen2.5-coder:7b",
     });
+    const provider = resolveProvider({
+      provider: settings.provider,
+      model: settings.model,
+      apiKey: settings.apiKey,
+      baseUrl: settings.baseUrl,
+      env: process.env,
+    });
+    const engine = new QueryEngine(provider);
 
     const events: AgentEvent[] = [];
     let fullText = "";
@@ -123,20 +139,25 @@ export class EvalRunner {
 
     const runPromise = (async () => {
       for await (const event of queryLoop(evalCase.prompt, {
-        settings,
+        engine,
         systemPrompt: evalCase.systemPromptOverride ?? "You are a helpful AI assistant.",
         tools: DEFAULT_TOOLS,
-        projectRoot: workingDir,
-        history: [],
+        policy: {
+          permissionLevel: PermissionLevel.STANDARD,
+          requestApproval: async () => false,
+          settings,
+          workingDirectory: workingDir,
+          maxTurns: 10,
+        },
       })) {
         events.push(event as AgentEvent);
-        if (event.type === "text") fullText += event.text ?? "";
-        if (event.type === "tool_call") toolsCalled.push((event as any).toolName);
-        if (event.type === "turn_start") turns++;
         if (event.type === "complete") {
-          inputTokens += (event as any).usage?.inputTokens ?? 0;
-          outputTokens += (event as any).usage?.outputTokens ?? 0;
+          fullText = event.text;
+          inputTokens += event.usage?.inputTokens ?? 0;
+          outputTokens += event.usage?.outputTokens ?? 0;
         }
+        if (event.type === "tool_call") toolsCalled.push((event as { toolName?: string }).toolName ?? "");
+        if (event.type === "turn_start") turns++;
       }
     })();
 
@@ -150,7 +171,7 @@ export class EvalRunner {
       events,
       turns,
       estimatedCostUsd: estimateCost(
-        settings.model,
+        settings.model ?? this.suite.model ?? "unknown",
         inputTokens,
         outputTokens
       ),
@@ -284,8 +305,9 @@ export class EvalRunner {
     try {
       const { QueryEngine, resolveProvider } = await import("@cowork/core");
       const provider = resolveProvider({
-        provider: this.suite.provider ?? "ollama",
+        provider: (this.suite.provider ?? "ollama") as import("@cowork/core").Settings["provider"],
         model: this.suite.model ?? "qwen2.5-coder:7b",
+        env: process.env,
       });
       const engine = new QueryEngine(provider);
 

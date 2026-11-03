@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Graph } from "../Graph.js";
 import type { GraphSnapshot } from "../types.js";
@@ -15,8 +15,7 @@ export class GraphStorage {
   }
 
   async save(snapshot: GraphSnapshot): Promise<void> {
-    await mkdir(dirname(this.jsonPath), { recursive: true });
-    await writeFile(this.jsonPath, JSON.stringify(snapshot, null, 2), "utf8");
+    await this.writePrivate(this.jsonPath, JSON.stringify(snapshot, null, 2));
   }
 
   async load(): Promise<Graph | null> {
@@ -39,7 +38,12 @@ export class GraphStorage {
   }
 
   async writeReport(report: string): Promise<void> {
-    await mkdir(dirname(this.reportPath), { recursive: true });
-    await writeFile(this.reportPath, report, "utf8");
+    await this.writePrivate(this.reportPath, report);
+  }
+
+  private async writePrivate(filePath: string, data: string): Promise<void> {
+    await mkdir(dirname(filePath), { recursive: true, mode: 0o700 });
+    await writeFile(filePath, data, { encoding: "utf8", mode: 0o600 });
+    await chmod(filePath, 0o600).catch(() => {});
   }
 }

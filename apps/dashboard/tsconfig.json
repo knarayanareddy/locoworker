@@ -2,7 +2,16 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./src"
+    "rootDir": "../.."
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/security" },
+    { "path": "../../packages/analytics" },
+    { "path": "../../packages/telemetry" },
+    { "path": "../../packages/wiki" },
+    { "path": "../../packages/kairos" },
+    { "path": "../../packages/research" }
+  ]
 }

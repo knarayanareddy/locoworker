@@ -35,7 +35,7 @@ export class ReActPlanner {
           maxTurns: 1,
           maxTokens: 800,
         })) {
-          if (event.type === "text") rawOutput += event.text;
+          if (event.type === "complete") rawOutput = event.text;
         }
       } catch {
         break;
