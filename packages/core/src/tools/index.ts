@@ -31,3 +31,6 @@ export {
   GlobTool,
   GrepTool,
 };
+
+export { validateToolInput } from "./validateToolInput.js";
+export type { ToolInputValidation } from "./validateToolInput.js";

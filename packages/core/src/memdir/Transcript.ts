@@ -1,5 +1,6 @@
-import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { appendPrivateFile } from "../utils/secureFile.js";
 import type { Message } from "../types.js";
 
 /**
@@ -18,7 +19,6 @@ export class TranscriptLog {
 
   async append(sessionId: string, messages: Message[]): Promise<void> {
     const path = this.pathFor(new Date());
-    await mkdir(dirname(path), { recursive: true });
     const ts = new Date().toISOString();
 
     let text = "";
@@ -29,7 +29,7 @@ export class TranscriptLog {
       text += `\n[${ts}] [${sessionId}] ${m.role}\n${content.trimEnd()}\n`;
     }
 
-    await appendFile(path, text, "utf8");
+    await appendPrivateFile(path, text);
   }
 
   /**

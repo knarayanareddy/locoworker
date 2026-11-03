@@ -14,7 +14,7 @@ MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Agent loop, tools, compression | ✅ working | `packages/core/src/queryLoop.ts`; 6 permission levels; approvals required for Bash and writes at elevated levels |
+| Agent loop, tools, compression | ✅ working | `packages/core/src/queryLoop.ts`; 6 permission levels; Bash and GitCommit require approval, other writes are gated by permission level (not a prompt) |
 | BYOK providers | ✅ working | Anthropic, OpenAI, Ollama, LM Studio, DeepSeek, OpenRouter (`packages/core/src/providers`) |
 | Persistent memory + transcripts | ✅ working | `~/.cowork/projects/<name>/`; `--resume` restores chat history |
 | Graphify knowledge graph | ✅ working | **Regex/heuristic extractors**, not tree-sitter; `bun run build:graph` writes `graphify-out/graph.json` |
@@ -25,15 +25,15 @@ MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 | Dashboard (React/Vite UI) | ⚠️ experimental | `apps/dashboard-frontend`; some panels still use fixture data; proxies `/api` to the local dashboard |
 | Orchestrator, council, research, simulation | ✅ working | Nested agents inherit the caller's permission policy |
 | Eval harness | ✅ working | `bun run eval` uses built-in suites; `bun run eval:custom` needs `.cowork/evals/*.eval.json` |
-| Tests & CI | ✅ working | `bun test` (60 tests) and `.github/workflows/ci.yml` |
+| Tests & CI | ✅ working | `bun test` (81 tests, incl. security regressions) and `.github/workflows/ci.yml` |
 | Container isolation | ⚠️ opt-in | `COWORK_SANDBOX_MODE=docker|podman` requires a local container runtime; default is unsandboxed |
-| Network sandbox | ✅ working | Allowlist + private-address blocking for `HttpFetch`; child processes never receive credentials |
+| Network sandbox | ✅ working | `HttpFetch` blocks private/special-use IPs, rejects URL credentials and re-checks resolved IPs; the public-host allowlist is opt-in via `COWORK_SANDBOX_ENABLED` |
 | Electron desktop / plugins / voice / marketplace | ⚠️ experimental or stubs | `packages/plugins` is a typed stub; voice needs external API keys |
 | tree-sitter AST parsing, Tauri shell, TOTP gateway auth | ❌ not present | TOTP exists only as an RFC 6238 utility; gateways use Bearer tokens + HMAC |
 
 ## Requirements
 
-- **Bun ≥ 1.1** (CI uses Bun 1.1); `ripgrep` recommended for the `Grep` tool.
+- **Bun ≥ 1.2** (CI pins **1.4.4**); `bun.lock` is the text lockfile introduced in 1.2, so 1.1.x cannot install it. `ripgrep` recommended for the `Grep` tool.
 - An API key for your chosen provider, or a local Ollama/LM Studio endpoint.
 - Optional: Docker or Podman for `COWORK_SANDBOX_MODE`.
 
@@ -72,18 +72,32 @@ bun run kairos             # standalone Kairos daemon
 - **Tool calls** pass through `PermissionGate`. Bash and other approval-flagged
   tools always ask; non-interactive sessions deny approvals unless `--yes`.
   A shared `AgentPolicy` propagates permissions, approvals, settings, hooks,
-  cwd and abort signals into nested agents and MCP/gateway calls.
-- **Paths** are confined to the project root, including symlink resolution.
-- **Child processes** receive a filtered environment (`filterEnv`), and tool
-  output/audit logs are scrubbed of credential patterns.
+  cwd and abort signals into nested agents and MCP/gateway calls. Tool inputs
+  are validated against each tool's `inputSchema` before execution, at both the
+  `queryLoop` and Hermes JSON-RPC choke points.
+- **Gateway identity** is derived from the Bearer token, not from a
+  client-supplied sender name. Outboxes and rate limits are keyed to that
+  identity; `GatewayConfig.senderTokens` maps distinct tokens to distinct
+  senders when multi-user access is needed.
+- **File paths** used by file tools are confined to the project root, including
+  symlink resolution. Shell commands are not individually sandboxed, and IDs
+  used as filenames are validated against a strict single-segment allowlist.
+- **Child processes** receive a filtered environment (`filterEnv`; currently a
+  denylist, not an allowlist). Tool output and audit logs are scrubbed of
+  credential patterns before truncation.
+- **State files** under `COWORK_HOME` and `<project>/.cowork` are created `0600`
+  inside `0700` directories, so transcripts, sessions, memory, audit events and
+  graph snapshots are not world-readable.
 - **Project config is untrusted**: `<project>/.cowork/settings.json` cannot set
   API keys, base URLs, MCP servers, permission modes, or sandbox settings. Put
   those in `~/.cowork/settings.json` or environment variables.
-- `JsEval` is permanently disabled; `HttpFetch` is allowlist-gated; `GitCommit`
-  requires explicit file paths and approval.
+- `JsEval` is permanently disabled; `HttpFetch` blocks non-global addresses and
+  re-checks DNS (the public-host allowlist is opt-in); `GitCommit` requires
+  explicit file paths and approval.
 
-See `.env.example` for the complete, current list of environment variables and
-`CONTRIBUTING.md` for the development and security checklist.
+See `.env.example` for the complete, current list of environment variables,
+`SECURITY_REVIEW.md` for the OWASP-mapped security review and its residual risks,
+and `CONTRIBUTING.md` for the development and security checklist.
 
 ## Repository map
 

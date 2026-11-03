@@ -1,5 +1,5 @@
 import type { ExecutionContext, ToolDefinition } from "@cowork/core";
-import { PermissionGate, PermissionLevel } from "@cowork/core";
+import { PermissionGate, PermissionLevel, validateToolInput } from "@cowork/core";
 import { HttpGuard } from "@cowork/security/network";
 import type {
   HermesConfig,
@@ -197,6 +197,12 @@ export class HermesServer {
         const tool = this.tools.get(params.name);
         if (!tool) return respondError(-32602, `Unknown tool: ${params.name}`);
 
+        const args = (params.arguments ?? {}) as Record<string, unknown>;
+        const validation = validateToolInput(tool, args);
+        if (!validation.valid) {
+          return respond({ content: [{ type: "text", text: validation.reason }], isError: true });
+        }
+
         const execCtx: ExecutionContext = {
           workingDirectory: this.config.workingDirectory ?? process.cwd(),
           sessionId: "hermes",
@@ -211,7 +217,7 @@ export class HermesServer {
         }
         if (check.allowed === "needs_approval") {
           const approval = this.config.requestApproval ?? this.config.policy?.requestApproval;
-          const approved = approval ? await approval(tool.name, (params.arguments ?? {}) as Record<string, unknown>) : false;
+          const approved = approval ? await approval(tool.name, args) : false;
           if (!approved) {
             return respond({
               content: [{ type: "text", text: `Tool "${tool.name}" was not approved` }],
@@ -221,10 +227,7 @@ export class HermesServer {
         }
 
         try {
-          const result = await tool.execute(
-            (params.arguments as Record<string, unknown>) ?? {},
-            execCtx,
-          );
+          const result = await tool.execute(args, execCtx);
           return respond({ content: [{ type: "text", text: result.content }], isError: result.isError });
         } catch (err) {
           return respond({

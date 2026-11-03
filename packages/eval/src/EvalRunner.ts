@@ -62,7 +62,7 @@ export class EvalRunner {
 
     // Create isolated temp workspace
     const tmpDir = path.join(tmpdir(), `cowork-eval-${randomUUID()}`);
-    await mkdir(tmpDir, { recursive: true });
+    await mkdir(tmpDir, { recursive: true, mode: 0o700 });
 
     // Write context files to temp dir
     if (evalCase.contextFiles) {
@@ -72,7 +72,7 @@ export class EvalRunner {
         if (rel.startsWith("..") || resolvePath(rel) === rel) {
           throw new Error(`contextFiles path escapes the workspace: ${filename}`);
         }
-        await mkdir(path.dirname(filePath), { recursive: true });
+        await mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
         await Bun.write(filePath, content);
       }
     }

@@ -99,7 +99,7 @@ export class VoiceSession {
     if (this.config.saveAudio) {
       const dir = path.join(this.config.projectRoot, ".cowork", "voice");
       // @ts-ignore
-      await mkdir(dir, { recursive: true });
+      await mkdir(dir, { recursive: true, mode: 0o700 });
       const ts = Date.now();
       await Bun.write(
         path.join(dir, `response-${ts}.${synthesis.format}`),

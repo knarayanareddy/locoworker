@@ -8,6 +8,7 @@ import type { Message, AgentEvent } from "./types.js";
 import type { QueryEngine } from "./QueryEngine.js";
 import type { ToolDefinition, ExecutionContext } from "./Tool.js";
 import { PermissionGate } from "./permissions/PermissionGate.js";
+import { validateToolInput } from "./tools/validateToolInput.js";
 import { PermissionLevel } from "./permissions/PermissionLevel.js";
 import type { ContextCompressor } from "./services/compact/ContextCompressor.js";
 import type { HookRegistry } from "./hooks/HookRegistry.js";
@@ -197,6 +198,18 @@ export async function* queryLoop(
 
       if (!tool) {
         toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: `Error: tool "${toolBlock.name}" not found`, is_error: true });
+        continue;
+      }
+
+      // inputSchema is a declaration, not a guarantee. Validate before the
+      // permission check and before any tool code sees the value.
+      const validation = validateToolInput(tool, toolBlock.input);
+      if (!validation.valid) {
+        const reason = `Invalid tool input: ${validation.reason}`;
+        const ev: AgentEvent = { type: "tool_result", id: toolBlock.id, name: tool.name, result: reason, isError: true };
+        if (hooks) await hooks.runOnEvent(ev, hookCtx);
+        yield ev;
+        toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: reason, is_error: true });
         continue;
       }
 

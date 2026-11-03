@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, appendFile, readFile, readdir } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
+import { ensurePrivateDir, appendPrivateFile } from "./secureFile.js";
 import { randomUUID } from "node:crypto";
 import { scrubSecrets } from "../scrub/SecretScrubber.js";
 import { getCoworkHome } from "./coworkHome.js";
@@ -30,7 +31,7 @@ export class AuditLog {
   }
 
   async init(): Promise<void> {
-    await mkdir(this.auditDir, { recursive: true });
+    await ensurePrivateDir(this.auditDir);
   }
 
   /**
@@ -87,16 +88,18 @@ export class AuditLog {
       timestamp: new Date().toISOString(),
       actor: opts.actor ?? "agent",
       toolName: opts.toolName,
+      // Scrub the full value BEFORE truncation: slicing a multi-line PEM
+      // key first can leave an unscrubbable secret fragment in the log.
       inputSummary: opts.inputSummary
-        ? scrubSecrets(opts.inputSummary.slice(0, 500))
+        ? scrubSecrets(opts.inputSummary).slice(0, 500)
         : undefined,
       outcome: opts.outcome,
-      reason: opts.reason,
+      reason: opts.reason ? scrubSecrets(opts.reason).slice(0, 500) : undefined,
       durationMs: opts.durationMs,
     };
 
     try {
-      await appendFile(this.logPath, JSON.stringify(event) + "\n", "utf-8");
+      await appendPrivateFile(this.logPath, JSON.stringify(event) + "\n");
     } catch {
       // never throw on audit failure
     }

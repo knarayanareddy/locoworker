@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { RateLimiter } from "./RateLimiter.js";
 import { scrubSecrets } from "@cowork/security/scrub";
 import { HttpGuard, verifyWebhookSignature } from "@cowork/security/network";
@@ -15,9 +15,12 @@ const MAX_TEXT_LENGTH = 8_000;
  * Canonical OpenClaw HTTP gateway.
  *
  * Replaces the old TOTP-per-message design with a Bearer token (required),
- * loopback binding, origin checks and HMAC-verified webhooks. Sender IDs are
- * only trusted when the request is authenticated; the previous implementation
- * let any caller claim an already-authenticated userId.
+ * loopback binding, origin checks and HMAC-verified webhooks.
+ *
+ * Identity is derived from the *token*, never from the request body. A holder
+ * of token A cannot claim to be sender B, read B's outbox, or circumvent the
+ * rate limiter by rotating `from`. Distinct identities are granted distinct
+ * tokens via `GatewayConfig.senderTokens`.
  */
 export class GatewayServer {
   private rateLimiter: RateLimiter;
@@ -50,6 +53,7 @@ export class GatewayServer {
       tokenEnvVar: this.config.tokenEnvVar ?? "COWORK_GATEWAY_AUTH_TOKEN",
       token: this.config.authToken,
       hostname: this.config.hostname,
+      additionalTokens: Object.keys(this.config.senderTokens ?? {}),
     });
     this.guard.logStartup();
     const self = this;
@@ -72,11 +76,7 @@ export class GatewayServer {
           return self.handleWebhook(req);
         }
         if (req.method === "GET" && url.pathname === "/outbox") {
-          const from = url.searchParams.get("from") ?? req.headers.get("x-cowork-sender") ?? "";
-          if (!from) return Response.json({ error: "Missing 'from' query parameter" }, { status: 400 });
-          const denied = self.validateSender(from);
-          if (denied) return denied;
-          return Response.json(self.outboxes.get(from)?.slice(-50) ?? []);
+          return self.handleOutbox(req, url);
         }
         return Response.json({ error: "Not found" }, { status: 404 });
       },
@@ -87,6 +87,28 @@ export class GatewayServer {
   stop(): void {
     this.server?.stop();
     this.server = null;
+  }
+
+  /** The authenticated principal: one token is exactly one identity. */
+  private identityFor(req: Request): string {
+    const token = this.guard!.presentedToken(req) ?? "";
+    const label = this.config.senderTokens?.[token];
+    if (label) return label;
+    return `sender-${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+  }
+
+  private handleOutbox(req: Request, url: URL): Response {
+    const principal = this.identityFor(req);
+    const claimed = url.searchParams.get("from") ?? req.headers.get("x-cowork-sender");
+    if (claimed && claimed !== principal) {
+      return Response.json(
+        { error: "Sender does not match the authenticated identity" },
+        { status: 403 },
+      );
+    }
+    const denied = this.validateSender(principal);
+    if (denied) return denied;
+    return Response.json(this.outboxes.get(principal)?.slice(-50) ?? []);
   }
 
   private validateSender(from: string): Response | null {
@@ -103,18 +125,26 @@ export class GatewayServer {
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    const from = (body.from ?? "anonymous").slice(0, 128);
+    const principal = this.identityFor(req);
+    const claimed = body.from === undefined ? undefined : body.from.slice(0, 128);
+    if (claimed && claimed !== principal) {
+      return Response.json(
+        { error: "Sender does not match the authenticated identity" },
+        { status: 403 },
+      );
+    }
     const text = body.text ?? "";
     if (!text.trim()) return Response.json({ error: "Empty message" }, { status: 400 });
     if (text.length > MAX_TEXT_LENGTH) return Response.json({ error: "Message too long" }, { status: 413 });
-    if (!this.rateLimiter.isAllowed(from)) return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
-    const denied = this.validateSender(from);
+    // Key the limiter on the token identity, not on a client-supplied string.
+    if (!this.rateLimiter.isAllowed(principal)) return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
+    const denied = this.validateSender(principal);
     if (denied) return denied;
 
     return this.respondTo({
       id: randomUUID(),
       channel: "http",
-      from,
+      from: principal,
       text: scrubSecrets(text),
       timestamp: new Date().toISOString(),
       metadata: body.metadata,
@@ -135,19 +165,22 @@ export class GatewayServer {
     } catch {
       return Response.json({ error: "Invalid JSON" }, { status: 400 });
     }
-    const from = (payload.from ?? "webhook").slice(0, 128);
+    const principal = this.identityFor(req);
+    const source = (payload.from ?? "webhook").slice(0, 128);
     const text = payload.text ?? payload.message ?? "";
     if (!text.trim()) return Response.json({ error: "Empty message" }, { status: 400 });
-    if (!this.rateLimiter.isAllowed(from)) return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
-    const denied = this.validateSender(from);
+    if (text.length > MAX_TEXT_LENGTH) return Response.json({ error: "Message too long" }, { status: 413 });
+    if (!this.rateLimiter.isAllowed(principal)) return Response.json({ error: "Rate limit exceeded" }, { status: 429 });
+    const denied = this.validateSender(principal);
     if (denied) return denied;
 
     return this.respondTo({
       id: randomUUID(),
       channel: "webhook",
-      from,
+      from: principal,
       text: scrubSecrets(text),
       timestamp: new Date().toISOString(),
+      metadata: { source },
     });
   }
 

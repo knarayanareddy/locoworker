@@ -5,7 +5,7 @@
 
 import { homedir } from "node:os";
 import path from "path";
-import mkdir from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "../utils/secureFile.js";
 import { getCoworkHome } from "../state/Settings.js";
 
 const HISTORY_FILE = path.join(getCoworkHome(), "repl-history");
@@ -65,8 +65,7 @@ export class HistoryManager {
   }
 
   private async persist(): Promise<void> {
-    // @ts-ignore
-    await mkdir(path.dirname(HISTORY_FILE), { recursive: true });
-    await Bun.write(HISTORY_FILE, this.entries.join("\n") + "\n");
+    await ensurePrivateDir(path.dirname(HISTORY_FILE));
+    await writePrivateFile(HISTORY_FILE, this.entries.join("\n") + "\n");
   }
 }

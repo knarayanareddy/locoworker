@@ -1,7 +1,6 @@
 import type { WikiPage, WikiIndex, LLMWikiConfig } from "./types";
-import { MemorySystem } from "@cowork/core";
+import { MemorySystem, ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
 import { Glob } from "bun";
 
 export class LLMWiki {
@@ -51,7 +50,7 @@ export class LLMWiki {
     slug: string,
     data: Omit<WikiPage, "slug" | "version" | "createdAt" | "updatedAt">
   ): Promise<WikiPage> {
-    await mkdir(this.config.wikiDir, { recursive: true });
+    await ensurePrivateDir(this.config.wikiDir);
     const existing = await this.getPage(slug);
     const now = new Date().toISOString();
 
@@ -64,7 +63,7 @@ export class LLMWiki {
       updatedAt: now,
     };
 
-    await Bun.write(this.pagePath(slug), JSON.stringify(page, null, 2));
+    await writePrivateFile(this.pagePath(slug), JSON.stringify(page, null, 2));
     await this.rebuildIndex();
     return page;
   }
@@ -126,7 +125,7 @@ export class LLMWiki {
 
   private async getAllPages(): Promise<WikiPage[]> {
     const pages: WikiPage[] = [];
-    await mkdir(this.config.wikiDir, { recursive: true });
+    await ensurePrivateDir(this.config.wikiDir);
     const glob = new Glob("*.json");
     for await (const file of glob.scan({
       cwd: this.config.wikiDir,
@@ -164,7 +163,7 @@ export class LLMWiki {
       })),
       generatedAt: new Date().toISOString(),
     };
-    await Bun.write(
+    await writePrivateFile(
       path.join(this.config.wikiDir, "index.json"),
       JSON.stringify(index, null, 2)
     );

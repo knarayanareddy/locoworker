@@ -1,7 +1,7 @@
 import * as readline from "node:readline";
-import { readFile, appendFile, mkdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import { queryLoop, defaultRegistry, getCoworkHome } from "@cowork/core";
+import { queryLoop, defaultRegistry, getCoworkHome, ensurePrivateDir, appendPrivateFile } from "@cowork/core";
 import type { Message, ResolvedSettings } from "@cowork/core";
 import { join } from "node:path";
 import { renderEvent } from "./render.js";
@@ -111,8 +111,8 @@ export async function runRepl(
       return;
     }
 
-    await mkdir(dirname(HISTORY_PATH), { recursive: true }).catch(() => {});
-    await appendFile(HISTORY_PATH, line + "\n", "utf-8").catch(() => {});
+    await ensurePrivateDir(dirname(HISTORY_PATH)).catch(() => {});
+    await appendPrivateFile(HISTORY_PATH, line + "\n").catch(() => {});
 
     if (line.endsWith("\\")) {
       process.stdout.write("  > ");

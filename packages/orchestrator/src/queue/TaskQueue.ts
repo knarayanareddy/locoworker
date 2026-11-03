@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import type {
   OrchestratorTask,
   TaskPriority,
@@ -27,13 +29,11 @@ export class TaskQueue {
   private async persist(): Promise<void> {
     if (!this.persistencePath) return;
     try {
-      const { mkdir, writeFile } = require("node:fs/promises");
-      const { dirname } = require("node:path");
-      await mkdir(dirname(this.persistencePath), { recursive: true });
+      await ensurePrivateDir(dirname(this.persistencePath));
       const content = [...this.tasks.values()]
         .map((t) => JSON.stringify(t))
         .join("\n") + "\n";
-      await writeFile(this.persistencePath, content, "utf8");
+      await writePrivateFile(this.persistencePath, content);
     } catch {
       // ignore
     }

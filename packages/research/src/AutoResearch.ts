@@ -1,7 +1,6 @@
 import type { ResearchConfig, ResearchJob, ResearchQueueEntry } from "./types";
-import { MemorySystem, QueryEngine, resolveProvider } from "@cowork/core";
+import { MemorySystem, QueryEngine, resolveProvider, ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import { WikiStore } from "@cowork/wiki";
-import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 const QUEUE_FILE = "research-queue.json";
@@ -22,12 +21,12 @@ export class AutoResearch {
   // ── Queue management ───────────────────────────────────────────────────────
 
   async enqueue(question: string, priority = 5, tags?: string[]): Promise<string> {
-    await mkdir(this.queueDir, { recursive: true });
+    await ensurePrivateDir(this.queueDir);
     const queue = await this.loadQueue();
     const id = `research-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     queue.push({ id, question, priority, addedAt: new Date().toISOString(), tags });
     queue.sort((a, b) => b.priority - a.priority);
-    await Bun.write(
+    await writePrivateFile(
       path.join(this.queueDir, QUEUE_FILE),
       JSON.stringify(queue, null, 2)
     );
@@ -46,7 +45,7 @@ export class AutoResearch {
 
     // Pop the highest-priority item
     const [entry, ...rest] = queue;
-    await Bun.write(
+    await writePrivateFile(
       path.join(this.queueDir, QUEUE_FILE),
       JSON.stringify(rest, null, 2)
     );
@@ -159,7 +158,7 @@ export class AutoResearch {
   }
 
   private async persistJob(job: ResearchJob): Promise<void> {
-    await mkdir(this.queueDir, { recursive: true });
+    await ensurePrivateDir(this.queueDir);
     let jobs: ResearchJob[] = [];
     try {
       const raw = await Bun.file(path.join(this.queueDir, JOBS_FILE)).text();
@@ -170,7 +169,7 @@ export class AutoResearch {
     if (idx >= 0) jobs[idx] = job;
     else jobs.push(job);
 
-    await Bun.write(
+    await writePrivateFile(
       path.join(this.queueDir, JOBS_FILE),
       JSON.stringify(jobs, null, 2)
     );

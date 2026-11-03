@@ -1,6 +1,5 @@
-import { MemorySystem } from "@cowork/core";
+import { MemorySystem, ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import path from "path";
-import mkdir from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import type { ProjectRecord, ProjectRegistry, ProjectStatus } from "./types";
@@ -169,8 +168,7 @@ export class ProjectManager {
 
   private async saveRegistry(registry: ProjectRegistry): Promise<void> {
     registry.updatedAt = new Date().toISOString();
-    // @ts-ignore
-    await mkdir(path.dirname(REGISTRY_FILE), { recursive: true });
-    await Bun.write(REGISTRY_FILE, JSON.stringify(registry, null, 2));
+    await ensurePrivateDir(path.dirname(REGISTRY_FILE));
+    await writePrivateFile(REGISTRY_FILE, JSON.stringify(registry, null, 2));
   }
 }

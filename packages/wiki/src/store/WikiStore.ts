@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
-import { mkdir, readFile, writeFile, readdir, unlink } from "node:fs/promises";
+import { readFile, readdir, unlink } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { WikiPage, WikiSearchResult } from "./types.js";
@@ -13,7 +14,7 @@ export class WikiStore {
   }
 
   async init(): Promise<void> {
-    await mkdir(this.wikiDir, { recursive: true });
+    await ensurePrivateDir(this.wikiDir);
   }
 
   async create(opts: {
@@ -190,6 +191,6 @@ export class WikiStore {
 
   private async save(page: WikiPage): Promise<void> {
     const path = join(this.wikiDir, `${page.slug}.json`);
-    await writeFile(path, JSON.stringify(page, null, 2), "utf-8");
+    await writePrivateFile(path, JSON.stringify(page, null, 2));
   }
 }

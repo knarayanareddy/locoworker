@@ -25,6 +25,8 @@ export interface HttpGuardOptions {
   env?: NodeJS.ProcessEnv;
   /** Allow an auto-generated token on loopback. Default: true. */
   allowEphemeralToken?: boolean;
+  /** Extra accepted tokens (e.g. one per gateway sender identity). */
+  additionalTokens?: string[];
 }
 
 export type HttpGuardInfo = {
@@ -64,6 +66,7 @@ export class HttpGuard {
   readonly tokenSource: "configured" | "ephemeral";
   readonly token: string;
   readonly allowEphemeralToken: boolean;
+  private readonly acceptedTokens: string[];
 
   constructor(options: HttpGuardOptions) {
     const env = options.env ?? process.env;
@@ -90,6 +93,12 @@ export class HttpGuard {
 
     this.tokenSource = configured.length > 0 ? "configured" : "ephemeral";
     this.token = configured.length > 0 ? configured : randomBytes(32).toString("hex");
+    const extras = (options.additionalTokens ?? []).filter((t) => t !== this.token);
+    const weak = extras.find((t) => t.length < 16);
+    if (weak) {
+      throw new Error(`[security] ${this.serviceName}: an additional token is shorter than 16 characters.`);
+    }
+    this.acceptedTokens = [this.token, ...extras];
   }
 
   /** Bun.serve options fragment. Always set a hostname explicitly. */
@@ -120,6 +129,11 @@ export class HttpGuard {
     process.stderr.write(lines.join("\n") + "\n");
   }
 
+  /** The token presented by the request, once authorize() has succeeded. */
+  presentedToken(req: Request): string | null {
+    return this.extractToken(req);
+  }
+
   private extractToken(req: Request): string | null {
     const auth = req.headers.get("authorization") ?? "";
     const bearer = /^Bearer\s+(.+)$/i.exec(auth);
@@ -131,7 +145,9 @@ export class HttpGuard {
   /** Returns a rejection Response, or null when the request is allowed. */
   authorize(req: Request): Response | null {
     const candidate = this.extractToken(req);
-    if (!candidate || !constantTimeEquals(candidate, this.token)) {
+    const matched = candidate !== null &&
+      this.acceptedTokens.some((token) => constantTimeEquals(candidate, token));
+    if (!matched) {
       return jsonResponse({ error: "Unauthorized" }, 401);
     }
 

@@ -5,6 +5,8 @@ import {
   validateSettingsPatch,
   getCoworkHome,
   DEFAULT_TOOLS,
+  ensurePrivateDir,
+  writePrivateFile,
 } from "@cowork/core";
 import { CostTracker } from "@cowork/telemetry/cost";
 import { AuditLog } from "@cowork/security/audit";
@@ -13,7 +15,7 @@ import { filterEnv } from "@cowork/security/env";
 import { WikiStore } from "@cowork/wiki";
 import { defaultKairosTasks } from "@cowork/kairos";
 import { join } from "node:path";
-import { readFile, writeFile, readdir, mkdir, chmod } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { spawn } from "node:child_process";
 
 export interface DashboardConfig {
@@ -212,12 +214,11 @@ export class DashboardRouter {
         catch (e) { return json({ error: e instanceof Error ? e.message : String(e) }, 400); }
         // Write to the *user* settings file (trusted), never to a cloned repo.
         const home = getCoworkHome();
-        await mkdir(home, { recursive: true });
+        await ensurePrivateDir(home);
         const path = join(home, "settings.json");
         let current: Record<string, unknown> = {};
         try { current = JSON.parse(await readFile(path, "utf-8")) as Record<string, unknown>; } catch { /* new file */ }
-        await writeFile(path, JSON.stringify({ ...current, ...validated }, null, 2), { encoding: "utf-8", mode: 0o600 });
-        await chmod(path, 0o600);
+        await writePrivateFile(path, JSON.stringify({ ...current, ...validated }, null, 2));
         return json({ status: "saved", keys: Object.keys(validated) });
       }
       const settings = await resolveSettings(projectRoot, process.env);

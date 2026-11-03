@@ -12,8 +12,10 @@ bun run typecheck
 bun test
 ```
 
-`bun --version` should be ≥ 1.1. TypeScript 5.9 is used at the root (the
-frontend config relies on features from that release).
+`bun --version` should be ≥ 1.2; CI pins **1.4.4**. `bun.lock` is the text
+lockfile introduced in Bun 1.2, so 1.1.x cannot install this repository.
+TypeScript 5.9 is used at the root (the frontend config relies on features from
+that release).
 
 ## Before opening a change
 
@@ -24,6 +26,11 @@ frontend config relies on features from that release).
 4. `bun run cowork --help` — CLI entry point still boots.
 5. Keep `graphify-out/`, `dist/`, `node_modules/`, `.cowork/` and generated
    `GRAPH_REPORT.md` out of the diff; they are gitignored.
+6. Security-sensitive changes must add a regression test (see
+   `packages/core/test/redteam-regressions.test.ts`,
+   `packages/security/test/hardening.test.ts`,
+   `packages/openclaw/test/gateway.test.ts`) and update
+   `SECURITY_REVIEW.md`.
 
 CI (`.github/workflows/ci.yml`) runs the same steps with
 `bun install --frozen-lockfile --ignore-scripts`.

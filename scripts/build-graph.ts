@@ -16,7 +16,7 @@ async function main() {
   const report = buildGraphReport(result, root);
   await storage.writeReport(report);
   // Keep the root-level report in sync (handy for agents/CLAUDE.md context).
-  await writeFile(resolve(root, "GRAPH_REPORT.md"), report);
+  await writeFile(resolve(root, "GRAPH_REPORT.md"), report, { encoding: "utf8", mode: 0o600 });
 
   console.log(`Graph built: ${result.filesProcessed} files, ${result.nodesCreated} nodes, ${result.edgesCreated} edges.`);
   console.log(`Results saved to ${outDir}`);

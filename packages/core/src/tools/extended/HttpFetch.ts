@@ -36,6 +36,9 @@ export const HttpFetch: ToolDefinition = {
     });
     try {
       sandbox.assertAllowed(input.url, "HttpFetch");
+      // Re-resolve the hostname so a public name that answers with a loopback
+      // address (DNS rebinding) is rejected before the socket is opened.
+      await sandbox.assertDnsAllowed(input.url, "HttpFetch");
     } catch (e) {
       return { content: (e as Error).message, isError: true };
     }

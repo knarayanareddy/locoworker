@@ -1,7 +1,7 @@
 import type { SuiteResult } from "./types";
 import { MemorySystem } from "@cowork/core";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { ensurePrivateDir, writePrivateFile } from "@cowork/core";
 
 export class Reporter {
   static toMarkdown(result: SuiteResult): string {
@@ -71,10 +71,10 @@ export class Reporter {
     projectRoot: string
   ): Promise<string> {
     const dir = path.join(MemorySystem.rootFor(projectRoot), "eval-results");
-    await mkdir(dir, { recursive: true });
+    await ensurePrivateDir(dir);
     const filename = `${result.suiteName.replace(/[^a-z0-9]/gi, "-")}-${Date.now()}.json`;
     const filePath = path.join(dir, filename);
-    await Bun.write(filePath, Reporter.toJSON(result));
+    await writePrivateFile(filePath, Reporter.toJSON(result));
     return filePath;
   }
 }

@@ -13,6 +13,7 @@ export interface CoworkGatewayConfig {
   authToken?: string;
   webhookSecret?: string;
   allowedSenders?: string[];
+  senderTokens?: Record<string, string>;
   agentSystemPrompt?: string;
   historyTurns?: number;
   /** Tools exposed to remote users. Defaults to read-only tools only. */
@@ -37,6 +38,7 @@ export class CoworkGateway {
       authToken: config.authToken,
       webhookSecret: config.webhookSecret,
       allowedSenders: config.allowedSenders,
+      senderTokens: config.senderTokens,
     });
   }
 

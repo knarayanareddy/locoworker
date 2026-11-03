@@ -1,9 +1,9 @@
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { mkdir, writeFile, unlink } from "node:fs/promises";
+import { unlink } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { KairosDaemon } from "@cowork/kairos";
-import { resolveProvider, QueryEngine, resolveSettings, queryLoop } from "@cowork/core";
+import { resolveProvider, QueryEngine, resolveSettings, queryLoop, ensurePrivateDir, writePrivateFile } from "@cowork/core";
 import type { IpcMessage, IpcResponse } from "./ipc.js";
 import { DAEMON_SOCK_PATH, DAEMON_PID_PATH } from "./ipc.js";
 
@@ -11,8 +11,8 @@ async function main() {
   const cwd = process.cwd();
   const settings = await resolveSettings(cwd, process.env);
 
-  await mkdir(join(homedir(), ".cowork", "kairos"), { recursive: true });
-  await writeFile(DAEMON_PID_PATH, String(process.pid), "utf-8");
+  await ensurePrivateDir(join(homedir(), ".cowork", "kairos"));
+  await writePrivateFile(DAEMON_PID_PATH, String(process.pid));
 
   process.stderr.write(`[kairos-daemon] Starting (pid ${process.pid})...\n`);
 
