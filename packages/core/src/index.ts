@@ -26,4 +26,4 @@ export * from "./eval/index.js";
 export * from "./services/compact/FullCompact.js";
 
 export { isSafeId, assertSafeId } from "./utils/safeId.js";
-export { ensurePrivateDir, writePrivateFile, appendPrivateFile, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./utils/secureFile.js";
+export { ensurePrivateDir, writePrivateFile, appendPrivateFile, assertSafeStatePath, PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "./utils/secureFile.js";

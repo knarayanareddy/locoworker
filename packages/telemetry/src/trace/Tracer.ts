@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SpanAttributes, TraceSpan, TelemetryConfig } from "./types.js";
+import { guardedFetch } from "@cowork/security/network";
 
 /**
  * Lightweight span tracer.
@@ -96,10 +97,15 @@ export class Tracer {
     };
 
     try {
-      await fetch(`${this.config.otlpEndpoint}`, {
+      await guardedFetch(`${this.config.otlpEndpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+      }, {
+        // OTLP collectors are commonly local; the endpoint is user config.
+        allowPrivate: true,
+        context: "OTLP",
+        maxResponseBytes: 64 * 1024,
       });
       this.spans = [];
     } catch {

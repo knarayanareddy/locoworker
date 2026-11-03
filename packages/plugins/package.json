@@ -9,8 +9,8 @@
     "@cowork/core": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "@types/bun": "latest"
+    "typescript": "^5.9.3",
+    "@types/bun": "^1.3.13"
   },
   "main": "./src/index.ts"
 }

@@ -1,5 +1,6 @@
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { ensurePrivateDir, writePrivateFile, assertSafeStatePath } from "@cowork/security/audit";
 import { Graph } from "../Graph.js";
 import type { GraphSnapshot } from "../types.js";
 
@@ -42,8 +43,10 @@ export class GraphStorage {
   }
 
   private async writePrivate(filePath: string, data: string): Promise<void> {
-    await mkdir(dirname(filePath), { recursive: true, mode: 0o700 });
-    await writeFile(filePath, data, { encoding: "utf8", mode: 0o600 });
-    await chmod(filePath, 0o600).catch(() => {});
+    // Project-local output directory: refuse symlinked state roots and use the
+    // shared O_NOFOLLOW writer instead of following a planted link.
+    await ensurePrivateDir(this.outputDir);
+    await assertSafeStatePath(filePath);
+    await writePrivateFile(filePath, data);
   }
 }

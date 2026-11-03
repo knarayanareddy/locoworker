@@ -4,10 +4,11 @@
   "type": "module",
   "main": "./src/index.ts",
   "dependencies": {
-    "@cowork/core": "workspace:*"
+    "@cowork/core": "workspace:*",
+    "@cowork/security": "workspace:*"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
-    "bun-types": "latest"
+    "typescript": "^5.9.3",
+    "bun-types": "^1.3.13"
   }
 }

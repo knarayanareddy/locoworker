@@ -34,3 +34,10 @@ export {
 
 export { validateToolInput } from "./validateToolInput.js";
 export type { ToolInputValidation } from "./validateToolInput.js";
+export { executeTool } from "./executeTool.js";
+export type {
+  ToolExecutionEvent,
+  ToolExecutionHooks,
+  ToolExecutionOutcome,
+  ToolExecutionStage,
+} from "./executeTool.js";

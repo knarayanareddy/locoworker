@@ -1,211 +1,145 @@
-# Security review — summary and remediation status
+# Security review — post-merge hardening refresh
 
 **Date:** 2026-11-03
-**Scope:** the `locoworker` monorepo after the hardening pass (PR #1), reviewed
-from an OWASP Top 10 2021 / OWASP LLM Top 10 / CWE perspective. All `.ts`/`.tsx`
-sources, root configuration, CI, `.env.example` and documentation were covered.
-**Method:** static trust-boundary review (authentication → network → agent loop →
-tools → filesystem → desktop) plus local, non-destructive proof-of-concept runs
-confined to temporary directories. No live service was attacked and no user data
-was read.
-**Disclosure:** this is the **PR-safe, redacted** version. It describes risk
-classes, locations and fixes but deliberately omits working exploit payloads.
-The full report (with reproducible PoCs) is kept out of version control and is
-not published in this pull request.
+**Target:** `main` @ `43584eb` (PR #1 merged), then the follow-up work on branch `arena/f17dd9a4-locoworker`
+**Status:** P0 items implemented and verified; P1/P2 residual risks tracked below
+**Companion documents:** `TOOLING_CURRENCY.md` (dependency/tooling audit), and an internal full-detail red-team report that is deliberately gitignored because it contains working exploit payloads.
 
-> This document is a point-in-time review, not a certification. Residual risks
-> are listed explicitly in §4 and should be read before exposing any surface
-> beyond loopback or to more than one user.
+> This document is PR-safe: it describes findings and fixes at the level of
+> trust boundaries, not reproducible attack payloads. No exploit details were
+> published to a pull request.
 
 ---
 
-## 1. Executive summary
+## 1. Summary
 
-The hardening pass is real: loopback-only binds, mandatory Bearer tokens,
-constant-time comparison, HMAC over raw webhook bodies, a fail-closed permission
-gate, derived nested-agent policies, symlink-aware path guarding, an honest
-feature matrix and a green CI job. **No default-reachable unauthenticated remote
-code execution was found.**
+A fresh OWASP Top 10 2021 / OWASP LLM Top 10 / CWE review of the merged build
+found **15 issues (7 High, 6 Medium, 2 Low)**. Most were **coverage gaps**, not
+broken primitives: the PR #1 controls were correct but only applied at two of
+five tool-execution choke points and to one of eight outbound HTTP call sites.
 
-The review produced **20 findings (8 High, 8 Medium, 4 Low)**. Residual risk was
-concentrated in four areas: identity was not per-user; the agent remains an
-unrestricted local code-execution primitive behind a blacklist and one approval
-prompt; several "read-only"/"filtered" declarations were not enforced; and some
-shipped-but-unwired modules contained direct code-execution or traversal sinks.
+No default-reachable, unauthenticated remote code execution was found. Baseline
+verification on the merged build was clean (`typecheck` clean, 81 tests passing).
 
-The five P0 items have now been remediated in this branch (§3), with 21 new
-regression tests (81 total). The remaining items are tracked as P1/P2 (§4) and
-are **not** claimed as fixed.
+All five P0 fix groups from the review are now implemented:
+
+1. A single `executeTool()` choke point with a real recursive JSON-Schema
+   validator (`ajv`), wired through every agent loop.
+2. `O_NOFOLLOW` / `O_EXCL`-style state writers that refuse symlinks and never
+   `chmod` a re-resolved path.
+3. A shared `guardedFetch()` with complete IANA special-use IP classification,
+   DNS pinning, redirect control and response caps, used by every outbound call.
+4. `GraphifyBuild` reclassified as a gated side-effecting tool, plus a reviewed
+   tool-manifest guard that runs in CI.
+5. Child-process env allowlist, container-env fix, sensitive-path denylist,
+   untrusted project-context framing, auth backoff, webhook replay protection,
+   Host/origin validation, CSP and security headers, and Electron IPC allowlists.
 
 ---
 
 ## 2. Findings and status
 
-| ID | Sev | Risk (redacted description) | OWASP 2021 / LLM | CWE | Status |
-|----|-----|-----------------------------|------------------|-----|--------|
-| F-01 | High | An extended tool compiled model-supplied text into host JavaScript | A03, LLM05 | CWE-94 | **Fixed** — strict path walker, no dynamic evaluation |
-| F-02 | High | Shared token + client-chosen sender: impersonation, cross-user outbox read, rate-limit bypass | A01, LLM02 | CWE-639, CWE-284 | **Fixed** — identity derived from credential |
-| F-03 | High | SSRF: private/special-use address blocklist bypassable; no resolved-IP recheck | A10, LLM02 | CWE-918 | **Mostly fixed** — see §4 note on egress allowlist |
-| F-04 | High | Conversation/audit/graph state created world-readable; partial secret scrubbing | A02, A09, LLM02 | CWE-532, CWE-276 | **Fixed** — `0600`/`0700`, scrub before truncate |
-| F-05 | High | Identifiers used as filename components allowed traversal (session resume, memory delete, marketplace) | A01, A03, LLM06 | CWE-22 | **Fixed** — strict ID validation + path containment |
-| F-06 | High | Auth hardening: no failed-auth throttling, webhook replay possible, browser token storage, no CSP | A07, A05, A09 | CWE-307, CWE-294, CWE-522 | **Open — P1** |
-| F-07 | High | MCP / marketplace / template supply chain (unsigned remote code, unfiltered child env, no timeouts) | A08, LLM03 | CWE-829, CWE-494 | **Open — P1** |
-| F-08 | High | Bash is unrestricted local execution; `--yes` removes the only interactive control; env denylist is incomplete | A05, A03, LLM06 | CWE-78, CWE-1188 | **Open — P1** |
-| F-09 | Medium | Secrets inside the project root are readable; project context is prompt-injectable | A02, LLM01/02/07 | CWE-200 | **Open — P1** |
-| F-10 | Medium | Some permission declarations and security claims did not match the code | A05, LLM07 | CWE-1188 | **Partially fixed** — stale docs corrected; see §4 |
-| F-11 | Medium | Missing request/session/stream limits (unbounded consumption) | A04, LLM10 | CWE-770 | **Open — P2** |
-| F-12 | Medium | Path containment is check-then-use (symlink TOCTOU) | A01, A03 | CWE-367 | **Open — P2** |
-| F-13 | Medium | Untrusted project settings can redirect the provider and inflate limits | A01, A05, LLM10 | CWE-862 | **Open — P2** |
-| F-14 | Medium | Electron IPC open operations unvalidated; HTML lacks CSP | A05, A03 | CWE-693, CWE-1021 | **Open — P1** |
-| F-15 | Medium | Vite dev server binds all interfaces with no auth | A05 | CWE-1188 | **Open — P1** |
-| F-16 | Medium | `inputSchema` was declarative only; tool inputs were never validated at runtime | A04, LLM05 | CWE-20 | **Fixed** — validation at tool choke points |
-| F-17 | Low | Dependency/runtime hygiene (mutable image tag, unpinned actions, no audit/SBOM) | A06, LLM03 | CWE-1104 | **Open — P2** |
-| F-18 | Low | Error/log/scrubber edge cases | A09 | CWE-209, CWE-117 | **Open — P2** |
-| F-19 | Low | TOTP utility has no replay protection or attempt limiting | A07 | CWE-294 | **Open — P2** |
-| F-20 | Low | Latent unwired extended tools contain dangerous operations | A03, A05, LLM06 | CWE-78, CWE-862 | **Open — P2** |
+Severity accounts for reachability: some High findings lived in shipped-but-
+unwired exports (one import away from exposure), consistent with the earlier
+review's convention.
 
-**Reachability caveat (important for severity):** F-01 and F-20 live in modules
-that are exported but **not registered** in the default tool list, which is why
-they are High rather than Critical. A future import could expose them silently;
-§5 recommends a CI guard on the registered tool manifest.
+| ID | Sev | Finding | Status |
+|----|-----|---------|--------|
+| R-01 | High | Alternate agent loops bypassed input validation and the permission gate | **Fixed** — all loops use `executeTool`; CI test forbids direct `tool.execute` |
+| R-02 | High | SSRF controls applied only to `HttpFetch`; marketplace / voice / telemetry / embedder / Telegram fetches were unguarded | **Fixed** — `guardedFetch` used everywhere; plugin downloads require HTTPS and are size-capped |
+| R-03 | High | IPv6 classification incomplete (NAT64, 6to4, Teredo, ORCHID, benchmarking, IPv4-translated); DNS rebinding TOCTOU | **Fixed** — full special-use list, pinned DNS answers, allowlist on by default |
+| R-04 | High | Private state writers followed symlinks and `chmod`'ed the target | **Fixed** — symlink/non-regular-file refusal, fd-based chmod, guarded state roots |
+| R-05 | High | `GraphifyBuild` declared `READ_ONLY` but writes two files, and is registered by the CLI | **Fixed** — `STANDARD` + approval; manifest regression test |
+| R-06 | High | Bash is unrestricted; `filterEnv` was a denylist; container mode inherited the parent env; `--yes` auto-approval | **Fixed (env + container)** — strict env allowlist, explicit env in all modes, configurable pinned container image. `--yes` remains an explicit operator choice |
+| R-07 | High | No auth throttling; HMAC replay; Host-derived origin; token in `localStorage`; no CSP | **Fixed** — exponential failed-auth cooldown, webhook replay cache + optional timestamp/nonce HMAC, Host allowlist, CSP/`nosniff`/`Referrer-Policy`/`X-Frame-Options`, Electron IPC URL/path allowlists and CSP |
+| R-08 | Medium | Project settings could redirect provider/model and inflate limits | **Fixed** — those keys are now untrusted; numeric budgets clamped |
+| R-09 | Medium | `Read` could read secrets inside the project root; project context was prompt-injectable | **Fixed** — sensitive filename/directory denylist; `CLAUDE.md` / memory framed as untrusted data |
+| R-10 | Medium | `validateToolInput` was shallow (no nested/enum/union/format/size checks) | **Fixed** — Ajv with bounded structural pre-check (depth/node/size/cycle limits) |
+| R-11 | Medium | No request/session/stream limits | **Partial** — `guardedFetch` caps response bytes and enforces timeouts; gateway session/outbox maps and SSE connections remain unbounded |
+| R-12 | Medium | Electron IPC open operations unvalidated; no CSP; Vite bound `0.0.0.0` | **Fixed** — scheme/path allowlists, CSP, loopback bind by default |
+| R-13 | Medium | MCP / marketplace / template supply chain | **Partial** — marketplace downloads hardened; MCP command allowlisting, detached plugin signatures and disabling template `postInstall` remain open |
+| R-14 | Low | Latent extended tools shipped; no CI guard on registered tool list | **Fixed** — reviewed manifest test (names, levels, approval flags, default registration) |
+| R-15 | Low | Error/log/scrubber hygiene; TOTP replay | **Partial** — dashboard errors no longer echo internal exceptions; log-schema validation, scrubber over-redaction and TOTP step tracking remain open |
 
 ---
 
-## 3. What was fixed in this branch (P0)
+## 3. What holds (verified against the merged build, then re-verified after fixes)
 
-### F-01 / F-16 — no dynamic evaluation; inputs validated before execution
-- `packages/core/src/tools/extended/JsonQuery.ts` now walks a restricted
-  dot/index path. Property lookups are own-property only and prototype-chain
-  segments are rejected. No expression evaluation remains.
-- New `packages/core/src/tools/validateToolInput.ts` enforces required keys,
-  primitive/array/object types, `additionalProperties: false`, array item types,
-  unsafe property names and oversized strings.
-- Validation runs in `queryLoop` (before the permission gate and before
-  `tool.execute`) and in the Hermes JSON-RPC `tools/call` dispatcher. MCP-derived
-  tools flow through `queryLoop`, so their declared schemas are enforced too.
-- Tests assert hostile inputs are rejected **without** invoking `execute`.
-
-### F-02 — one token is one identity
-- `HttpGuard` accepts a set of per-sender tokens and exposes the presented
-  token after successful authorization.
-- `GatewayConfig.senderTokens` maps a token to a sender identity. Identity is
-  derived from the credential (or a stable hash of it), never from the request
-  body. A request claiming a different `from` is rejected before the handler.
-- Outboxes and the rate limiter are keyed on that identity; a token cannot read
-  another identity's outbox, and rotating a claimed sender no longer resets the
-  limit. Webhook payload sender names are retained only as untrusted metadata.
-- Tests cover impersonation, outbox isolation, distinct-token buckets and the
-  rate-limit bypass.
-
-### F-03 — SSRF containment
-- `NetworkSandbox` now normalizes hostnames (brackets, trailing dots, zone IDs,
-  case) and classifies the full set of non-global IPv4 ranges, IPv6 loopback /
-  unique-local / link-local / multicast / documentation ranges, and IPv4-mapped
-  IPv6 addresses. WHATWG URL normalization is relied on for decimal/hex IPv4
-  literals. Credentials-in-URL are rejected and known IP-encoding DNS suffixes
-  are denied.
-- `assertDnsAllowed()` re-resolves a hostname and fails closed if any answer is
-  a blocked address; `HttpFetch` calls it immediately before the request, while
-  keeping `redirect: "manual"`.
-- Tests cover every bypass class found during the review plus a public-host
-  allowlist happy path.
-
-### F-05 — IDs and untrusted paths
-- New `packages/core/src/utils/safeId.ts` validates every ID used as a filename
-  component (single safe segment, no separators or dot segments).
-- Applied to session resume/list/delete, memory create/load/delete and the
-  marketplace plugin ID. Marketplace entrypoints from a remote registry are now
-  resolved through `guardPath()` and confined to the plugin directory.
-- Tests assert traversal IDs are refused before any filesystem write or unlink.
-
-### F-04 — private state
-- New `packages/security/src/audit/secureFile.ts` (re-exported from
-  `@cowork/core`) provides `ensurePrivateDir` / `writePrivateFile` /
-  `appendPrivateFile`, which create `0700` directories and `0600` files and
-  tighten pre-existing permissions on the next write.
-- Applied to audit logs, transcripts, sessions, memory/index, wiki pages, graph
-  snapshots, cost/analytics ledgers, schedulers, project/episode/research state,
-  REPL history, dashboard settings and daemon PID files. User-facing generated
-  project files (source scaffolding, reports, audio) intentionally keep normal
-  modes.
-- `AuditLog` now scrubs the **full** value before truncating, and scrubs the
-  `reason` field; a regression test asserts a truncated PEM block cannot leave
-  key material in the log.
-
-### Documentation
-- Corrected the Bun requirement to **≥ 1.2** (CI pins **1.4.4**, because
-  `bun.lock` is the text lockfile) in `README.md`, `CLAUDE.md` and
-  `CONTRIBUTING.md`.
-- Updated the test counts (81) and qualified several over-broad security claims.
-- Added contributor guidance for security regression tests and this document.
-
-### Verification
-`bun run typecheck` — clean. `bun test` — **81 pass / 0 fail / 297 assertions
-across 13 files**. `bun run build:graph` and CLI smoke checks still pass. Remote
-CI (`verify`) is re-run on this push. `bun run eval` remains unverified because
-it requires a configured provider.
+- `JsonQuery` no longer evaluates JavaScript; no `new Function` remains.
+- Gateway identity is derived from the token; outbox IDOR and rotating-`from`
+  rate-limit bypass regressions stay closed.
+- Private IPv4/host bypass classes from the first review remain denied.
+- File modes (0600/0700) and scrub-before-truncate are correct.
+- `assertSafeId` on sessions, memory and marketplace IDs.
+- Loopback binds, mandatory tokens, constant-time comparison, HMAC raw-body
+  verification, fail-closed `PermissionGate`, symlink-aware path containment,
+  strict CLI flag parsing, generated state excluded from git.
 
 ---
 
-## 4. Residual risk (deliberately not claimed as fixed)
+## 4. Residual risks (P1 / P2)
 
-1. **Egress policy (F-03, partial).** The allowlist itself is still opt-in
-   (`COWORK_SANDBOX_ENABLED` defaults to `false`) for compatibility: with it off,
-   any *public* host is reachable, though private/special-use destinations are
-   blocked regardless. Operators who need a strict egress policy must set
-   `COWORK_SANDBOX_ENABLED=true` and `COWORK_SANDBOX_ALLOWLIST`. DNS rebinding is
-   mitigated by a pre-request recheck but not eliminated (there is no IP pinning
-   on the socket).
-2. **Authentication hardening (F-06, P1).** No failed-auth backoff/lockout,
-   webhook signatures have no timestamp/nonce replay protection, the browser
-   stores the token in `localStorage`, HTML responses have no CSP/security
-   headers, and ephemeral tokens are printed to stderr.
-3. **Supply chain and child processes (F-07, F-08, P1).** MCP executables are
-   not allowlisted, child environments use a denylist rather than an allowlist,
-   container mode inherits the parent environment, MCP requests have no timeout,
-   marketplace downloads are unsigned, and `--yes` still auto-approves shell
-   execution. Container isolation remains opt-in.
-4. **Prompt-injectable project context (F-09, P1).** File tools can read secret
-   files inside the project root, and project `CLAUDE.md`/`MEMORY.md` are loaded
-   into the system prompt by default.
-5. **Desktop and dev server (F-14, F-15, P1).** Electron IPC open operations lack
-   scheme/path allowlists and the Vite dev server binds `0.0.0.0`.
-6. **Correctness / defence in depth (F-10…F-13, F-17…F-20, P2).** Includes
-   unbounded session/stream growth, check-then-use path resolution, project
-   settings able to influence provider/limits, dependency hygiene, error detail
-   leakage, TOTP replay, latent dangerous extended tools, and one remaining
-   permission declaration (`GraphifyBuildTool` writes while declared
-   `READ_ONLY`) plus the general "writes at elevated levels" wording.
+**P1**
 
----
+- **R-11:** gateway `userSessions` / `outboxes` maps and Hermes `/sse` streams
+  have no LRU/TTL or connection cap; `AuditLog.read()` still parses the whole
+  NDJSON file before slicing; dashboard log export is unbounded.
+- **R-13:** MCP stdio servers are spawned from a config file with
+  `{ ...process.env, ...config.env }`, tool descriptions are injected verbatim,
+  plugin bundles are not signature-verified, template `postInstall` still runs
+  via `bash -c`.
+- **Project settings:** `apiKey`/`baseUrl` and other sensitive keys are blocked,
+  but `~/.cowork/settings.json` remains fully trusted (by design).
 
-## 5. Recommendations (next steps)
+**P2**
 
-- **Before any non-loopback or multi-user exposure:** implement F-06 (auth
-  throttling, HMAC timestamp+nonce, CSP/security headers, safer token storage),
-  F-07/F-08 (MCP allowlist + filtered env + timeouts, container isolation by
-  default, non-`--yes`-able shell confirmation), F-09 (sensitive-file denylist
-  and untrusted-context framing), F-14/F-15.
-- **Defence in depth:** F-11/-12/-13 limits and containment; F-17 dependency
-  audit and pinned actions; F-18 generic client errors with server-side detail;
-  F-19 TOTP step tracking; F-20 remove or gate the latent extended tools.
-- **Guard against regressions:** add a CI check asserting that the registered
-  tool list and each tool's declared `PermissionLevel` / `requiresApproval`
-  match an explicit reviewed manifest, so an unwired tool cannot be exposed by a
-  single import.
-- **Keep security tests as the specification:** every new fix should add a test
-  that fails on the old behaviour, following the pattern in
-  `packages/core/test/redteam-regressions.test.ts`,
-  `packages/security/test/hardening.test.ts` and
-  `packages/openclaw/test/gateway.test.ts`.
+- **R-15:** log-event schema validation, `safeMetadata` cycle detection,
+  scrubber over-redaction, TOTP used-step tracking.
+- **Webhook migration:** replay protection is active for all senders; only
+  senders that add `x-cowork-timestamp` + `x-cowork-nonce` get the extended
+  timestamped HMAC. Legacy raw-body HMAC remains accepted for compatibility.
+- **DNS pinning:** `guardedFetch` pins validated addresses for the connection.
+  Calls that intentionally target user-configured local endpoints use an
+  explicit `allowPrivate` opt-out; those URLs must never come from a model or a
+  repository.
+- **`--yes`:** auto-approval is still available as an explicit CLI flag; it
+  should not be used on untrusted repositories.
+- **Tooling:** TypeScript 7, Vite 8 and the provider SDK majors are still
+  deferred (see `TOOLING_CURRENCY.md` § Implementation status). Electron was
+  upgraded to a supported line.
 
 ---
 
-## 6. What the build already does well (preserve these)
+## 5. Verification
 
-Loopback binds with mandatory tokens and constant-time comparison; HMAC over the
-exact raw webhook body; `redirect: "manual"` in `HttpFetch`; a fail-closed
-`PermissionGate` with derived nested policies; symlink-aware `guardPath`; a
-strict key whitelist for dashboard settings patches and untrusted project
-settings; strict CLI flag parsing with fail-closed non-TTY approvals; an honest
-feature matrix; and generated state excluded from version control.
+| Check | Result |
+|-------|--------|
+| `bun install --frozen-lockfile --ignore-scripts` | clean; repo-local security scanner runs on install |
+| `bun run typecheck` (`tsc -b` + frontend + desktop) | 0 errors |
+| `bun test` | **107 pass / 0 fail / 452 assertions across 16 files** |
+| New regression suites | `tool-manifest.test.ts`, `p0-2026-hardening.test.ts`, `p0-2026-network.test.ts` |
+| `bun run scan` (`bun pm scan`) | no advisories; self-test confirmed a fatal rule aborts the scan |
+| `bun run sbom` | CycloneDX 1.6 SBOM with 513 components |
+| `bun run build:graph` | 343 files / 1531 nodes / 2099 edges |
+| `bun run cowork --help` | ok; unknown flag still exits 2 |
+| Local PoCs (harmless, from `/tmp`) | 18 IPv6/SSRF bypass URLs denied; symlink writes refused; replayed webhook rejected; crafted Host rejected; marketplace loopback download blocked |
+
+Regression tests assert the **security property** (refusal before execution or
+before a write), not just the happy path.
+
+---
+
+## 6. Recommendations
+
+1. Add LRU/TTL caps to gateway session/outbox maps, SSE connection limits,
+   bounded tail reads for audit logs and a size cap on log export (R-11).
+2. Require explicit approval per MCP server, allowlist MCP executables, pass an
+   allowlisted env, add timeouts/line caps, treat descriptions as untrusted
+   data, verify detached plugin signatures and disable template `postInstall`
+   by default (R-13).
+3. Validate parsed log events, add cycle detection to `safeMetadata`, track
+   last-accepted TOTP step, and cap attempts (R-15).
+4. Keep `security/advisories.json` and the SBOM under review as part of
+   dependency upgrades; consider feeding the SBOM to a live OSV scanner in CI.
+5. Plan the deferred major upgrades with a dedicated migration PR (TypeScript 7,
+   Vite 8 / plugin-react 6, provider SDK majors).

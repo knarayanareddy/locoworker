@@ -1,0 +1,8 @@
+# Bun configuration for locoworker.
+#
+# The security scanner is repo-local and offline-deterministic: it enforces
+# security/advisories.json on every `bun install`, `bun add` and `bun pm scan`.
+# CI additionally uploads a CycloneDX SBOM (`bun run sbom`) so the resolved
+# dependency set can be checked against a live advisory service.
+[install.security]
+scanner = "./scripts/security-scanner.ts"

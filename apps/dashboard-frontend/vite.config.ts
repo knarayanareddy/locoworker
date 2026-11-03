@@ -12,7 +12,13 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   plugins: [react(), tailwindcss(), viteSingleFile()],
   server: {
-    host: "0.0.0.0",
+    // Bind loopback unless an operator explicitly opts into LAN exposure.
+    host: process.env.COWORK_VITE_HOST ?? "127.0.0.1",
+    headers: {
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "X-Frame-Options": "DENY",
+    },
     proxy: {
       // The dashboard API requires a Bearer token; main.tsx injects it.
       "/api": { target: "http://127.0.0.1:3720", changeOrigin: false },

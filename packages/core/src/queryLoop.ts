@@ -8,7 +8,7 @@ import type { Message, AgentEvent } from "./types.js";
 import type { QueryEngine } from "./QueryEngine.js";
 import type { ToolDefinition, ExecutionContext } from "./Tool.js";
 import { PermissionGate } from "./permissions/PermissionGate.js";
-import { validateToolInput } from "./tools/validateToolInput.js";
+import { executeTool } from "./tools/executeTool.js";
 import { PermissionLevel } from "./permissions/PermissionLevel.js";
 import type { ContextCompressor } from "./services/compact/ContextCompressor.js";
 import type { HookRegistry } from "./hooks/HookRegistry.js";
@@ -201,18 +201,6 @@ export async function* queryLoop(
         continue;
       }
 
-      // inputSchema is a declaration, not a guarantee. Validate before the
-      // permission check and before any tool code sees the value.
-      const validation = validateToolInput(tool, toolBlock.input);
-      if (!validation.valid) {
-        const reason = `Invalid tool input: ${validation.reason}`;
-        const ev: AgentEvent = { type: "tool_result", id: toolBlock.id, name: tool.name, result: reason, isError: true };
-        if (hooks) await hooks.runOnEvent(ev, hookCtx);
-        yield ev;
-        toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: reason, is_error: true });
-        continue;
-      }
-
       const execCtx: ExecutionContext = {
         workingDirectory,
         permissionLevel,
@@ -221,51 +209,50 @@ export async function* queryLoop(
         sessionId,
       };
 
-      const checkResult = PermissionGate.check(tool, execCtx);
+      // Every tool call goes through the one hardened choke point: schema
+      // validation, permission gate, approval, then execution.
+      const outcome = await executeTool(tool, toolBlock.input, execCtx, {
+        approve: requestApproval,
+        onPreTool: async (name, input) => {
+          hookCtx.finalText = finalText;
+          hookCtx.totalInputTokens = totalInputTokens;
+          hookCtx.totalOutputTokens = totalOutputTokens;
+          if (hooks) await hooks.runPreTool(name, input, hookCtx);
+        },
+        onPostTool: async (name, input, toolResult) => {
+          if (hooks) await hooks.runPostTool(name, input, toolResult, hookCtx);
+        },
+        transformResult: compressor ? (content) => compressor.micro(content) : undefined,
+      });
 
-      if (checkResult.allowed === false) {
-        const ev: AgentEvent = { type: "permission_denied", tool: tool.name, reason: checkResult.reason };
+      // Replay decisions to the UI / hooks in the order they were made.
+      for (const decision of outcome.events) {
+        const ev: AgentEvent =
+          decision.type === "invalid_input"
+            ? { type: "tool_result", id: toolBlock.id, name: tool.name, result: decision.reason, isError: true }
+            : decision.type === "permission_denied"
+              ? { type: "permission_denied", tool: decision.tool, reason: decision.reason }
+              : { type: "permission_request", tool: decision.tool, input: decision.input };
         if (hooks) await hooks.runOnEvent(ev, hookCtx);
         yield ev;
-        toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: checkResult.reason, is_error: true });
+      }
+
+      if (
+        outcome.stage === "invalid_input" ||
+        outcome.stage === "permission_denied" ||
+        outcome.stage === "approval_denied"
+      ) {
+        toolResultBlocks.push({
+          type: "tool_result",
+          tool_use_id: toolBlock.id,
+          content: outcome.result.content,
+          is_error: true,
+        });
         continue;
       }
 
-      if (checkResult.allowed === "needs_approval") {
-        const reqEv: AgentEvent = { type: "permission_request", tool: tool.name, input: toolBlock.input };
-        if (hooks) await hooks.runOnEvent(reqEv, hookCtx);
-        yield reqEv;
-
-        const approved = requestApproval ? await requestApproval(tool.name, toolBlock.input) : false;
-        if (!approved) {
-          const denyEv: AgentEvent = { type: "permission_denied", tool: tool.name, reason: "User denied approval" };
-          if (hooks) await hooks.runOnEvent(denyEv, hookCtx);
-          yield denyEv;
-          toolResultBlocks.push({ type: "tool_result", tool_use_id: toolBlock.id, content: "User denied permission", is_error: true });
-          continue;
-        }
-      }
-
-      hookCtx.finalText = finalText;
-      hookCtx.totalInputTokens = totalInputTokens;
-      hookCtx.totalOutputTokens = totalOutputTokens;
-
-      if (hooks) {
-        await hooks.runPreTool(tool.name, toolBlock.input, hookCtx);
-      }
-
-      let result: { content: string; isError: boolean };
-      try {
-        result = await tool.execute(toolBlock.input, execCtx);
-      } catch (e) {
-        result = { content: `Unexpected error: ${e instanceof Error ? e.message : String(e)}`, isError: true };
-      }
-
-      if (hooks) {
-        await hooks.runPostTool(tool.name, toolBlock.input, result, hookCtx);
-      }
-
-      const outputContent = compressor ? compressor.micro(result.content) : result.content;
+      const result = outcome.result;
+      const outputContent = result.content;
 
       const resultEv: AgentEvent = { type: "tool_result", id: toolBlock.id, name: tool.name, result: outputContent, isError: result.isError };
       if (hooks) await hooks.runOnEvent(resultEv, hookCtx);

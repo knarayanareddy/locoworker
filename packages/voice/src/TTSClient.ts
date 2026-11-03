@@ -1,4 +1,5 @@
 import type { VoiceConfig, SynthesisResult } from "./types";
+import { guardedFetch } from "@cowork/security/network";
 
 export class TTSClient {
   private config: VoiceConfig;
@@ -34,14 +35,14 @@ export class TTSClient {
       speed: this.config.ttsSpeed ?? 1.0,
     };
 
-    const res = await fetch("https://api.openai.com/v1/audio/speech", {
+    const res = await guardedFetch("https://api.openai.com/v1/audio/speech", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
-    });
+    }, { context: "TTS/openai" });
 
     if (!res.ok) throw new Error(`OpenAI TTS error: ${await res.text()}`);
     const audioData = new Uint8Array(await res.arrayBuffer());
@@ -56,7 +57,7 @@ export class TTSClient {
 
     const voiceId = this.config.ttsVoice ?? "EXAVITQu4vr4xnSDxMaL"; // default "Bella"
 
-    const res = await fetch(
+    const res = await guardedFetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
       {
         method: "POST",
@@ -70,7 +71,8 @@ export class TTSClient {
           model_id: "eleven_monolingual_v1",
           voice_settings: { stability: 0.5, similarity_boost: 0.5 },
         }),
-      }
+      },
+      { context: "TTS/elevenlabs" },
     );
 
     if (!res.ok) throw new Error(`ElevenLabs TTS error: ${await res.text()}`);

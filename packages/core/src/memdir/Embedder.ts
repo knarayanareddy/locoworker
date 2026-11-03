@@ -1,3 +1,5 @@
+import { guardedFetch } from "@cowork/security/network";
+
 /**
  * Optional embedding client. Talks to any OpenAI-compatible /v1/embeddings
  * endpoint (Ollama exposes one, OpenAI itself, LM Studio, etc).
@@ -25,7 +27,7 @@ export class Embedder {
 
   private async embedOne(text: string): Promise<number[] | null> {
     try {
-      const res = await fetch(`${stripSlash(this.config.baseUrl)}/embeddings`, {
+      const res = await guardedFetch(`${stripSlash(this.config.baseUrl)}/embeddings`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -33,6 +35,12 @@ export class Embedder {
         },
         body: JSON.stringify({ model: this.config.model, input: text }),
         signal: AbortSignal.timeout(8_000),
+      }, {
+        // baseUrl is user/env configuration (blocked from project settings),
+        // so local Ollama / LM Studio endpoints are explicitly permitted.
+        allowPrivate: true,
+        context: "Embedder",
+        timeoutMs: 8_000,
       });
       if (!res.ok) return null;
       const data = (await res.json()) as { data?: { embedding: number[] }[] };

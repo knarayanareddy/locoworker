@@ -73,7 +73,13 @@ describe("settings validation", () => {
       expect(settings.apiKey).toBeUndefined();
       expect(settings.baseUrl).toBeUndefined();
       expect(settings.mcpServers).toBeUndefined();
-      expect(settings.model).toBe("project-model"); // harmless key is honoured
+      // Provider, model, limits and tool-surface flags are now untrusted too:
+      // a cloned repo must not redirect API calls or inflate the run budget.
+      expect(settings.model).toBeUndefined();
+      expect(settings.provider).toBe("ollama");
+      expect(settings.maxTurns).toBe(50);
+      expect(settings.enableGraphify).toBe(false);
+      expect(warnings.some((w) => w.includes("\"model\""))).toBe(true);
       expect(warnings.length).toBeGreaterThan(0);
     } finally {
       if (prevHome === undefined) delete process.env.COWORK_HOME;

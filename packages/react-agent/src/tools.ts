@@ -20,6 +20,8 @@ export const ReActRun: ToolDefinition = {
     required: ["task"],
   },
   permissionLevel: PermissionLevel.STANDARD,
+  // ReActRun executes other tools from free-form text: always ask.
+  requiresApproval: true,
   async execute(input: { task: string; maxSteps?: number }, ctx: ToolContext) {
     const loop = new ReActLoop({
       settings: ctx.settings!,

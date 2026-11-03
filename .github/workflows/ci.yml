@@ -12,10 +12,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+        uses: oven-sh/setup-bun@v2.2.0
         with:
           # bun.lock is the text lockfile (Bun >= 1.2); 1.1.x only reads bun.lockb.
           bun-version: "1.4.4"
@@ -23,12 +23,29 @@ jobs:
       - name: Install dependencies
         # --ignore-scripts avoids Electron's binary download: this workflow
         # only typechecks the desktop sources, it does not package them.
+        # bunfig.toml runs the repo-local security scanner on every install.
         run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Dependency security scan
+        # Enforces security/advisories.json (e.g. no EOL Electron) on the
+        # complete resolved dependency set. Fails on fatal or warn advisories.
+        run: bun run scan
+
+      - name: Generate CycloneDX SBOM
+        run: bun run sbom
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          if-no-files-found: error
 
       - name: Typecheck (all workspaces, frontend, desktop)
         run: bun run typecheck
 
       - name: Tests
+        # Includes the reviewed tool-manifest guard and the P0 regressions.
         run: bun test
 
       - name: Graphify builder smoke test

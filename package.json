@@ -2,7 +2,7 @@
   "name": "locoworker",
   "version": "0.1.0",
   "private": true,
-  "description": "Claude CoWork — BYOK + Local LLM agentic coding workspace",
+  "description": "Claude CoWork \u2014 BYOK + Local LLM agentic coding workspace",
   "workspaces": [
     "packages/*",
     "apps/*"
@@ -20,7 +20,9 @@
     "dashboard": "bun run apps/dashboard/src/server.ts",
     "test": "bun test",
     "build:all": "tsc -b",
-    "eval:custom": "bun run packages/core/src/eval/run.ts"
+    "eval:custom": "bun run packages/core/src/eval/run.ts",
+    "sbom": "bun run scripts/sbom.ts",
+    "scan": "bun pm scan"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
@@ -41,6 +43,7 @@
     "@cowork/analytics": "workspace:*"
   },
   "engines": {
-    "bun": ">=1.2.0"
-  }
+    "bun": ">=1.4.4"
+  },
+  "packageManager": "bun@1.4.4"
 }

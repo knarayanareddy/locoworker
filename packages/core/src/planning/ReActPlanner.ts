@@ -2,6 +2,8 @@ import { queryLoop } from "../queryLoop.js";
 import type { QueryEngine } from "../QueryEngine.js";
 import type { ToolDefinition } from "../Tool.js";
 import type { ReActStep } from "./types.js";
+import { executeTool } from "../tools/executeTool.js";
+import { PermissionLevel } from "../permissions/PermissionLevel.js";
 
 const REACT_SYSTEM_PROMPT = `You are a ReAct (Reason + Act) agent.
 For each step, FIRST reason about what to do, THEN decide on an action.
@@ -63,12 +65,16 @@ export class ReActPlanner {
 
       if (tool) {
         try {
-          const result = await tool.execute(actionInput as Record<string, unknown>, {
+          // Route through the shared choke point: free-form ReAct text must
+          // not bypass inputSchema validation or the permission gate.
+          const outcome = await executeTool(tool, actionInput, {
             workingDirectory: process.cwd(),
             sessionId: "react-planner",
-            permissionLevel: 2,
-          } as Parameters<typeof tool.execute>[1]);
-          observation = result.content;
+            permissionLevel: PermissionLevel.STANDARD,
+            // No interactive approver in this loop: fail closed.
+            requestApproval: async () => false,
+          });
+          observation = outcome.result.content;
         } catch (err) {
           observation = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
         }

@@ -1,0 +1,28 @@
+{
+  "updatedAt": "2026-11-03",
+  "note": "Offline policy consumed by scripts/security-scanner.ts during bun install / bun pm scan. Ranges are npm semver ranges; update whenever the toolchain or advisory landscape changes. This is a policy guard, not a live CVE feed — CI also uploads a CycloneDX SBOM for external scanning.",
+  "rules": [
+    {
+      "package": "electron",
+      "range": "<42.0.0",
+      "level": "fatal",
+      "url": "https://github.com/advisories/GHSA-hq2x-r82h-9wj4",
+      "description": "Electron < 42 is end-of-life and affected by multiple high-severity advisories (45 advisories matched 31.7.7 on 2026-11-03). Use a supported release line."
+    },
+    {
+      "package": "event-stream",
+      "range": ">=3.3.6 <4.0.0",
+      "level": "fatal",
+      "url": "https://blog.npmjs.org/post/180565383195/details-about-the-event-stream-incident",
+      "description": "event-stream 3.3.6 shipped a compromised dependency."
+    },
+    {
+      "package": "@opentelemetry/sdk-trace-base",
+      "range": "*",
+      "level": "warn",
+      "url": "https://www.npmjs.com/package/@opentelemetry/sdk-trace-base",
+      "description": "Deprecated on npm: use @opentelemetry/sdk-trace."
+    }
+  ],
+  "flagLatestRanges": true
+}

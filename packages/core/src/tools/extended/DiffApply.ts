@@ -15,6 +15,8 @@ export const DiffApply: ToolDefinition = {
     required: ["filePath", "diff"],
   },
   permissionLevel: PermissionLevel.STANDARD,
+  // Spawns `patch` with model-supplied diff text: always ask.
+  requiresApproval: true,
   async execute(input: { filePath: string; diff: string }, ctx) {
     const guarded = await guardPath(ctx.workingDirectory, input.filePath);
     if (guarded.error) return { content: guarded.error, isError: true };

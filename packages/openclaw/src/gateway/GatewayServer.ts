@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { RateLimiter } from "./RateLimiter.js";
 import { scrubSecrets } from "@cowork/security/scrub";
-import { HttpGuard, verifyWebhookSignature } from "@cowork/security/network";
+import { HttpGuard, WebhookReplayCache, verifyWebhookSignature } from "@cowork/security/network";
 import type {
   GatewayConfig,
   InboundMessage,
@@ -29,6 +29,8 @@ export class GatewayServer {
   /** Outbox is scoped per sender: one user cannot read another user's replies. */
   private outboxes = new Map<string, OutboundMessage[]>();
   private guard: HttpGuard | null = null;
+  /** Rejects replayed webhook bodies / reused nonces. */
+  private readonly webhookReplay = new WebhookReplayCache();
 
   constructor(private config: GatewayConfig) {
     this.rateLimiter = new RateLimiter(config.rateLimitPerMinute);
@@ -156,7 +158,16 @@ export class GatewayServer {
       return Response.json({ error: "Webhook ingress is not configured" }, { status: 404 });
     }
     const raw = await req.text();
-    if (!verifyWebhookSignature(raw, req.headers.get("x-cowork-signature"), this.config.webhookSecret)) {
+    if (!verifyWebhookSignature(
+      raw,
+      req.headers.get("x-cowork-signature"),
+      this.config.webhookSecret,
+      {
+        timestamp: req.headers.get("x-cowork-timestamp"),
+        nonce: req.headers.get("x-cowork-nonce"),
+        replay: this.webhookReplay,
+      },
+    )) {
       return Response.json({ error: "Invalid webhook signature" }, { status: 401 });
     }
     let payload: { from?: string; text?: string; message?: string };

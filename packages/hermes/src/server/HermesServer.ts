@@ -1,5 +1,5 @@
 import type { ExecutionContext, ToolDefinition } from "@cowork/core";
-import { PermissionGate, PermissionLevel, validateToolInput } from "@cowork/core";
+import { PermissionLevel, executeTool } from "@cowork/core";
 import { HttpGuard } from "@cowork/security/network";
 import type {
   HermesConfig,
@@ -198,11 +198,6 @@ export class HermesServer {
         if (!tool) return respondError(-32602, `Unknown tool: ${params.name}`);
 
         const args = (params.arguments ?? {}) as Record<string, unknown>;
-        const validation = validateToolInput(tool, args);
-        if (!validation.valid) {
-          return respond({ content: [{ type: "text", text: validation.reason }], isError: true });
-        }
-
         const execCtx: ExecutionContext = {
           workingDirectory: this.config.workingDirectory ?? process.cwd(),
           sessionId: "hermes",
@@ -211,30 +206,15 @@ export class HermesServer {
           abortSignal: this.config.abortSignal ?? this.config.policy?.abortSignal,
         };
 
-        const check = PermissionGate.check(tool, execCtx);
-        if (check.allowed === false) {
-          return respond({ content: [{ type: "text", text: check.reason }], isError: true });
-        }
-        if (check.allowed === "needs_approval") {
-          const approval = this.config.requestApproval ?? this.config.policy?.requestApproval;
-          const approved = approval ? await approval(tool.name, args) : false;
-          if (!approved) {
-            return respond({
-              content: [{ type: "text", text: `Tool "${tool.name}" was not approved` }],
-              isError: true,
-            });
-          }
-        }
-
-        try {
-          const result = await tool.execute(args, execCtx);
-          return respond({ content: [{ type: "text", text: result.content }], isError: result.isError });
-        } catch (err) {
-          return respond({
-            content: [{ type: "text", text: err instanceof Error ? err.message : String(err) }],
-            isError: true,
-          });
-        }
+        // Single hardened choke point: schema validation, permission gate,
+        // approval, then execution. No direct tool.execute here.
+        const outcome = await executeTool(tool, args, execCtx, {
+          approve: this.config.requestApproval ?? this.config.policy?.requestApproval,
+        });
+        return respond({
+          content: [{ type: "text", text: outcome.result.content }],
+          isError: outcome.result.isError,
+        });
       }
 
       case "shutdown":

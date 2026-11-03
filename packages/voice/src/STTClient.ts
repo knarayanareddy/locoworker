@@ -1,4 +1,5 @@
 import type { VoiceConfig, TranscriptionResult } from "./types";
+import { guardedFetch } from "@cowork/security/network";
 import path from "path";
 
 export class STTClient {
@@ -48,11 +49,11 @@ export class STTClient {
     form.append("model", "whisper-1");
     if (this.config.language) form.append("language", this.config.language);
 
-    const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    const res = await guardedFetch("https://api.openai.com/v1/audio/transcriptions", {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}` },
       body: form,
-    });
+    }, { context: "STT/whisper" });
 
     if (!res.ok) {
       const err = await res.text();
@@ -78,10 +79,10 @@ export class STTClient {
     form.append("file", new Blob([audioData], { type: "audio/wav" }), "audio.wav");
     form.append("model", "whisper-1");
 
-    const res = await fetch(`${baseUrl}/v1/audio/transcriptions`, {
+    const res = await guardedFetch(`${baseUrl}/v1/audio/transcriptions`, {
       method: "POST",
       body: form,
-    });
+    }, { allowPrivate: true, context: "STT/local-whisper" });
 
     if (!res.ok) throw new Error(`Local Whisper error: ${await res.text()}`);
     const data = await res.json() as { text: string };
@@ -102,7 +103,7 @@ export class STTClient {
         ? await Bun.file(audio).arrayBuffer()
         : (new Uint8Array(audio).buffer as ArrayBuffer);
 
-    const res = await fetch(
+    const res = await guardedFetch(
       "https://api.deepgram.com/v1/listen?model=nova-2&smart_format=true",
       {
         method: "POST",
@@ -111,7 +112,8 @@ export class STTClient {
           "Content-Type": mimeType,
         },
         body: audioData,
-      }
+      },
+      { context: "STT/deepgram" },
     );
 
     if (!res.ok) throw new Error(`Deepgram error: ${await res.text()}`);

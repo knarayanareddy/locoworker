@@ -25,7 +25,7 @@ MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 | Dashboard (React/Vite UI) | ⚠️ experimental | `apps/dashboard-frontend`; some panels still use fixture data; proxies `/api` to the local dashboard |
 | Orchestrator, council, research, simulation | ✅ working | Nested agents inherit the caller's permission policy |
 | Eval harness | ✅ working | `bun run eval` uses built-in suites; `bun run eval:custom` needs `.cowork/evals/*.eval.json` |
-| Tests & CI | ✅ working | `bun test` (81 tests, incl. security regressions) and `.github/workflows/ci.yml` |
+| Tests & CI | ✅ working | `bun test` (107 tests, incl. security regressions + reviewed tool manifest) and `.github/workflows/ci.yml` |
 | Container isolation | ⚠️ opt-in | `COWORK_SANDBOX_MODE=docker|podman` requires a local container runtime; default is unsandboxed |
 | Network sandbox | ✅ working | `HttpFetch` blocks private/special-use IPs, rejects URL credentials and re-checks resolved IPs; the public-host allowlist is opt-in via `COWORK_SANDBOX_ENABLED` |
 | Electron desktop / plugins / voice / marketplace | ⚠️ experimental or stubs | `packages/plugins` is a typed stub; voice needs external API keys |
@@ -33,7 +33,9 @@ MCP and messaging gateways, multi-agent orchestration, and a local dashboard.
 
 ## Requirements
 
-- **Bun ≥ 1.2** (CI pins **1.4.4**); `bun.lock` is the text lockfile introduced in 1.2, so 1.1.x cannot install it. `ripgrep` recommended for the `Grep` tool.
+- **Bun ≥ 1.4.4** (pinned via `packageManager` and CI); `bun.lock` is the text
+  lockfile introduced in 1.2. `ripgrep` recommended for the `Grep` tool.
+  Every `bun install` runs the repo-local security scanner in `bunfig.toml`.
 - An API key for your chosen provider, or a local Ollama/LM Studio endpoint.
 - Optional: Docker or Podman for `COWORK_SANDBOX_MODE`.
 
@@ -44,6 +46,8 @@ bun install --ignore-scripts       # --ignore-scripts skips Electron's binary do
 cp .env.example .env               # fill in one provider key
 bun run typecheck                  # tsc -b + frontend + desktop
 bun test                           # unit/integration tests
+bun run scan                       # dependency advisory scan (bun pm scan)
+bun run sbom                       # CycloneDX SBOM from bun.lock
 bun run cowork                     # interactive REPL
 bun run cowork "explain src/queryLoop.ts"
 bun run cowork --resume <session-id> "continue"
@@ -118,7 +122,7 @@ packages/
   eval/ cache/ memory-v2/ voice/ templates/ marketplace/ projects/
   react-agent/ plugins/   experimental / stubs
 scripts/build-graph.ts    graph build entry point
-.github/workflows/ci.yml  install → typecheck → tests → graph → CLI smoke
+.github/workflows/ci.yml  install → security scan → SBOM → typecheck → tests → graph → CLI smoke
 ```
 
 ## License

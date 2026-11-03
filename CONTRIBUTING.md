@@ -12,8 +12,12 @@ bun run typecheck
 bun test
 ```
 
-`bun --version` should be ≥ 1.2; CI pins **1.4.4**. `bun.lock` is the text
-lockfile introduced in Bun 1.2, so 1.1.x cannot install this repository.
+`bun --version` must be ≥ **1.4.4** (enforced by `engines` and
+`packageManager`); CI pins **1.4.4**. `bun.lock` is the text lockfile
+introduced in Bun 1.2, so 1.1.x cannot install this repository.
+`bunfig.toml` wires a repo-local security scanner: `bun install` fails on
+advisories listed in `security/advisories.json`. Update that policy when you
+change a dependency that has a known-vulnerable range.
 TypeScript 5.9 is used at the root (the frontend config relies on features from
 that release).
 
@@ -22,6 +26,10 @@ that release).
 1. `bun run typecheck` — typechecks all workspaces via `tsc -b`, plus the
    Vite frontend and Electron desktop configs.
 2. `bun test` — unit/integration tests. Add tests for behaviour changes.
+   The reviewed tool manifest (`packages/core/test/tool-manifest.test.ts`) must
+   be updated whenever a tool is added, removed or reclassified.
+3. `bun run scan` — dependency advisory scan (also runs during install).
+4. `bun run sbom` — regenerate the CycloneDX SBOM for review.
 3. `bun run build:graph` — verifies the Graphify builder end-to-end.
 4. `bun run cowork --help` — CLI entry point still boots.
 5. Keep `graphify-out/`, `dist/`, `node_modules/`, `.cowork/` and generated

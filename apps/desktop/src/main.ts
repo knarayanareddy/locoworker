@@ -16,10 +16,39 @@ import {
   globalShortcut,
 } from "electron";
 import path from "path";
+import { homedir } from "node:os";
+import { join, relative, resolve } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 
 const DASHBOARD_PORT = 3720;
 const DASHBOARD_URL = `http://localhost:${DASHBOARD_PORT}`;
+
+/** Only https URLs (plus our own loopback dashboard) may leave the app. */
+function isAllowedExternalUrl(raw: string): boolean {
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol === "https:") return true;
+    if (parsed.protocol === "http:") {
+      return parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/** `shell.openPath` is confined to the project and the cowork state root. */
+function isAllowedOpenPath(requested: string): boolean {
+  const target = resolve(requested);
+  const roots = [
+    resolve(process.env.COWORK_PROJECT ?? process.cwd()),
+    join(homedir(), ".cowork", "projects"),
+  ];
+  return roots.some((root) => {
+    const rel = relative(root, target);
+    return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+  });
+}
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -106,8 +135,23 @@ function createWindow(): void {
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url);
+    else process.stderr.write(`[desktop] blocked external URL: ${url}\n`);
     return { action: "deny" };
+  });
+
+  // Defence in depth: add a CSP even when the dashboard did not send one.
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        "Content-Security-Policy": [
+          "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; " +
+          "connect-src 'self' http://localhost:3720; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        ],
+        "X-Content-Type-Options": ["nosniff"],
+      },
+    });
   });
 
   mainWindow.on("closed", () => {
@@ -141,7 +185,7 @@ function createTray(): void {
         {
           label: "Open Project Folder",
           click: () =>
-            shell.openPath(process.env.COWORK_PROJECT ?? process.cwd()),
+            void shell.openPath(process.env.COWORK_PROJECT ?? process.cwd()),
         },
         {
           label: "Open Memory Folder",
@@ -191,5 +235,15 @@ function registerGlobalShortcuts(): void {
 // ── IPC handlers ───────────────────────────────────────────────────────────────
 
 ipcMain.handle("get-project-root", () => process.env.COWORK_PROJECT ?? process.cwd());
-ipcMain.handle("open-external", (_, url: string) => shell.openExternal(url));
-ipcMain.handle("open-path", (_, p: string) => shell.openPath(p));
+ipcMain.handle("open-external", (_, url: string) => {
+  if (typeof url !== "string" || !isAllowedExternalUrl(url)) {
+    throw new Error("Blocked external URL: only https (or the local dashboard) is allowed");
+  }
+  return shell.openExternal(url);
+});
+ipcMain.handle("open-path", (_, p: string) => {
+  if (typeof p !== "string" || !isAllowedOpenPath(p)) {
+    throw new Error("Blocked open-path: target is outside the project or cowork state directory");
+  }
+  return shell.openPath(p);
+});
